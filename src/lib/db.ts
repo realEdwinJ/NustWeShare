@@ -5,12 +5,24 @@ import * as schema from "@/db/schema";
 let pool: Pool | null = null;
 let dbInstance: ReturnType<typeof drizzle<typeof schema>> | null = null;
 
+function getConnectionString(): string {
+  // Production Workers: try Hyperdrive binding first (env.HYPERDRIVE.connectionString)
+  try {
+    // @ts-ignore — optional, only in Cloudflare Workers via OpenNext
+    const { getCloudflareContext } = require("@opennextjs/cloudflare");
+    const ctx = getCloudflareContext();
+    const hyper = ctx?.env?.HYPERDRIVE?.connectionString as string | undefined;
+    if (hyper) return hyper;
+  } catch {}
+  // Local dev / fallback: raw DATABASE_URL (also used by drizzle-kit)
+  const url = process.env.DATABASE_URL;
+  if (!url) throw new Error("DATABASE_URL/HYPERDRIVE not set. Check .env or Hyperdrive binding");
+  return url;
+}
+
 function getPool(): Pool {
   if (pool) return pool;
-  const connectionString = process.env.DATABASE_URL;
-  if (!connectionString) {
-    throw new Error("DATABASE_URL is not set. Check .env");
-  }
+  const connectionString = getConnectionString();
   pool = new Pool({
     connectionString,
     ssl:

@@ -1,12 +1,9 @@
 import { z } from "zod";
 
 const envSchema = z.object({
-  DATABASE_URL: z.string().min(1, "DATABASE_URL is required"),
-  R2_BUCKET: z.string().min(1).default("nustweshare-papers"),
-  R2_ENDPOINT: z.string().url().optional(),
-  R2_ACCESS_KEY_ID: z.string().optional(),
-  R2_SECRET_ACCESS_KEY: z.string().optional(),
-  R2_PUBLIC_URL: z.string().url().optional(),
+  // DATABASE_URL is required for local dev and drizzle-kit migrations;
+  // in production Workers, HYPERDRIVE binding provides connectionString and DATABASE_URL may be absent
+  DATABASE_URL: z.string().optional(),
   APP_SECRET: z.string().min(16, "APP_SECRET must be at least 16 chars"),
   ADMIN_SECRET: z.string().min(16).optional(),
   NEXT_PUBLIC_APP_URL: z.string().url().optional(),
