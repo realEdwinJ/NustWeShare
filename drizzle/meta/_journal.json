@@ -1,0 +1,20 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1787523455611,
+      "tag": "0000_bent_blink",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1787523455612,
+      "tag": "0001_trgm_search",
+      "breakpoints": true
+    }
+  ]
+}
