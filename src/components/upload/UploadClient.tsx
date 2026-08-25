@@ -101,7 +101,7 @@ export function UploadClient() {
       for (const f of files) form.append("files", f.file);
 
       const res = await fetch("/api/papers/upload", { method: "POST", body: form });
-      const json = await res.json();
+      const json = (await res.json()) as any;
       if (!res.ok) {
         setError(json.error?.message || "Upload failed.");
       } else {

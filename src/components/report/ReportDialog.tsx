@@ -32,7 +32,7 @@ export function ReportDialog({ paperId }: { paperId: string }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ reason, details: details || null }),
       });
-      const json = await res.json();
+      const json = (await res.json()) as any;
       if (!res.ok) {
         setError(json.error?.message || "Failed to report.");
       } else {

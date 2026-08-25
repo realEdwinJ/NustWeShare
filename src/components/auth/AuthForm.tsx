@@ -24,7 +24,7 @@ export function RegisterForm() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username, displayName, pin }),
       });
-      const json = await res.json();
+      const json = (await res.json()) as any;
       if (!res.ok) {
         setError(json.error?.message || "Failed to create profile.");
       } else {
@@ -87,7 +87,7 @@ export function LoginForm() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username, pin }),
       });
-      const json = await res.json();
+      const json = (await res.json()) as any;
       if (!res.ok) {
         setError(json.error?.message || "Login failed.");
       } else {

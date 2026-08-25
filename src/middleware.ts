@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-export function proxy(req: NextRequest) {
+export function middleware(req: NextRequest) {
   // CSRF check for state-changing POST to /api (Spec 51) — verify Origin is same-site if present
   if (req.method === "POST" && req.nextUrl.pathname.startsWith("/api/")) {
     const origin = req.headers.get("origin");

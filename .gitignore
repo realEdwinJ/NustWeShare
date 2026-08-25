@@ -39,6 +39,10 @@ uploads/
 # vercel
 .vercel
 
+# opennext / cloudflare
+.open-next/
+worker-configuration.d.ts
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts

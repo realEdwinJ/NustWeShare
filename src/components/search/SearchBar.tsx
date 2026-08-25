@@ -32,7 +32,7 @@ export function SearchBar({ large = false, placeholder = "Search module code or 
       try {
         const res = await fetch(`/api/search?q=${encodeURIComponent(q.trim())}`);
         if (!res.ok) return;
-        const json = await res.json();
+        const json = (await res.json()) as any;
         if (json.data) {
           setResults(json.data);
           setOpen(true);

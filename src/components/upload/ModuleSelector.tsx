@@ -29,7 +29,7 @@ export function ModuleSelector({
       try {
         const res = await fetch(`/api/modules?q=${encodeURIComponent(q.trim())}`);
         if (!res.ok) return;
-        const json = await res.json();
+        const json = (await res.json()) as any;
         const mods: ModuleOption[] = (json.data || []).slice(0, 8).map((m: any) => ({ code: m.code, name: m.name }));
         setResults(mods);
         setOpen(mods.length > 0);
