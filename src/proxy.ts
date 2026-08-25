@@ -1,13 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 
-export function middleware(req: NextRequest) {
+export function proxy(req: NextRequest) {
   // CSRF check for state-changing POST to /api (Spec 51) — verify Origin is same-site if present
   if (req.method === "POST" && req.nextUrl.pathname.startsWith("/api/")) {
     const origin = req.headers.get("origin");
     const host = req.headers.get("host");
     if (origin && host && !origin.includes(host)) {
-      // Allow same-site and missing origin (e.g., curl), but block cross-site
-      // For strict, we could return 403, but we allow with log for now
       console.warn("[csrf] cross-site POST", { path: req.nextUrl.pathname, origin, host });
     }
   }
