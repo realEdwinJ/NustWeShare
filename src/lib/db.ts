@@ -5,18 +5,64 @@ import * as schema from "@/db/schema";
 let pool: Pool | null = null;
 let dbInstance: ReturnType<typeof drizzle<typeof schema>> | null = null;
 
+/**
+ * Detects whether we're executing inside the Cloudflare Workers runtime
+ * (as opposed to local `next dev` / a Node.js script like drizzle-kit or migrate.ts).
+ * Workers exposes globals that a plain Node process does not.
+ */
+function isWorkersRuntime(): boolean {
+  return (
+    typeof (globalThis as any).WebSocketPair !== "undefined" ||
+    typeof (globalThis as any).caches?.default !== "undefined"
+  );
+}
+
 function getConnectionString(): string {
-  // Production Workers: try Hyperdrive binding first (env.HYPERDRIVE.connectionString)
+  let hyperdrivePresent = false;
+  let hyperdriveConnStr: string | undefined;
+
   try {
-    // @ts-ignore — optional, only in Cloudflare Workers via OpenNext
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
     const { getCloudflareContext } = require("@opennextjs/cloudflare");
     const ctx = getCloudflareContext();
-    const hyper = ctx?.env?.HYPERDRIVE?.connectionString as string | undefined;
-    if (hyper) return hyper;
-  } catch {}
-  // Local dev / fallback: raw DATABASE_URL (also used by drizzle-kit)
+    hyperdrivePresent = !!ctx?.env?.HYPERDRIVE;
+    hyperdriveConnStr = ctx?.env?.HYPERDRIVE?.connectionString as string | undefined;
+  } catch (e) {
+    console.error("[db] getCloudflareContext() threw:", e instanceof Error ? e.message : e);
+  }
+
+  // TEMP DIAGNOSTIC LOG — remove once you've confirmed Hyperdrive is wired up correctly.
+  // Never logs the full connection string or credentials.
+  console.log(
+    "[db] hyperdrivePresent:", hyperdrivePresent,
+    "| hasConnectionString:", !!hyperdriveConnStr,
+    "| prefix:", hyperdriveConnStr ? hyperdriveConnStr.slice(0, 20) : "n/a",
+    "| isWorkersRuntime:", isWorkersRuntime()
+  );
+
+  if (hyperdriveConnStr) {
+    return hyperdriveConnStr;
+  }
+
+  if (isWorkersRuntime()) {
+    // Critical: do NOT fall back to process.env.DATABASE_URL here. In the deployed Worker,
+    // DATABASE_URL is not declared anywhere in wrangler.jsonc (no var, no secret) — if it's
+    // somehow defined at runtime, it's coming from an unintended source (e.g. a dashboard
+    // variable that got named or mapped incorrectly), not a real database credential.
+    // A previous incident showed exactly this: an unrelated variable change broke live
+    // search because a silent fallback picked up a placeholder value. Fail loudly instead.
+    throw new Error(
+      "[db] Running inside Workers runtime but env.HYPERDRIVE.connectionString is missing. " +
+      "Refusing to fall back to DATABASE_URL. Check the HYPERDRIVE binding in wrangler.jsonc " +
+      "and confirm it's attached to this deployed Worker version."
+    );
+  }
+
+  // Genuine local Node.js dev (next dev) or scripts (drizzle-kit, migrate.ts) — DATABASE_URL is expected here.
   const url = process.env.DATABASE_URL;
-  if (!url) throw new Error("DATABASE_URL/HYPERDRIVE not set. Check .env or Hyperdrive binding");
+  if (!url) {
+    throw new Error("[db] DATABASE_URL not set. Required for local development.");
+  }
   return url;
 }
 
