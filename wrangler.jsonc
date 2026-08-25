@@ -1,0 +1,38 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "nustweshare",
+  "main": ".open-next/worker.js",
+  "compatibility_date": "2026-08-25",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "directory": ".open-next/assets",
+    "binding": "ASSETS"
+  },
+  "observability": {
+    "enabled": true
+  },
+  "vars": {
+    "NEXT_PUBLIC_APP_URL": "https://nustweshare.workers.dev"
+  },
+  "r2_buckets": [
+    {
+      "binding": "PAPERS_BUCKET",
+      "bucket_name": "nustweshare-papers",
+      "preview_bucket_name": "nustweshare-papers-preview"
+    }
+  ],
+  "env": {
+    "preview": {
+      "vars": {
+        "NEXT_PUBLIC_APP_URL": "https://preview.nustweshare.workers.dev"
+      },
+      "r2_buckets": [
+        {
+          "binding": "PAPERS_BUCKET",
+          "bucket_name": "nustweshare-papers-preview",
+          "preview_bucket_name": "nustweshare-papers-preview"
+        }
+      ]
+    }
+  }
+}
