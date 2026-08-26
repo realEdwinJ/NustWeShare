@@ -76,8 +76,10 @@ export function SearchBar({ large = false, placeholder = "Search module code or 
       if (sel && q.trim().length >= 2) {
         e.preventDefault();
         setOpen(false);
-        if (sel.type === "module") router.push(`/modules/${sel.code.toLowerCase()}`);
-        else router.push(`/search?q=${encodeURIComponent(sel.code)}`);
+        start(() => {
+          if (sel.type === "module") router.push(`/modules/${sel.code.toLowerCase()}`);
+          else router.push(`/search?q=${encodeURIComponent(sel.code)}`);
+        });
       }
     } else if (e.key === "Escape") {
       setOpen(false);

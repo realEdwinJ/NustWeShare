@@ -69,15 +69,18 @@ function getConnectionString(): string {
 function getPool(): Pool {
   if (pool) return pool;
   const connectionString = getConnectionString();
+  const isHyperdrive = connectionString.includes("hyperdrive") || connectionString.includes("501e0e");
   pool = new Pool({
     connectionString,
     ssl:
-      process.env.NODE_ENV === "production" || connectionString.includes("sslmode=require")
-        ? { rejectUnauthorized: false }
-        : undefined,
-    max: 5, // Workers free tier — keep low per Spec 47,78
+      isHyperdrive
+        ? undefined // Hyperdrive handles SSL via its own proxy, don't override
+        : process.env.NODE_ENV === "production" || connectionString.includes("sslmode=require")
+          ? { rejectUnauthorized: false }
+          : undefined,
+    max: isHyperdrive ? 2 : 5, // Hyperdrive pools at edge, keep low for Workers
     idleTimeoutMillis: 10000,
-    connectionTimeoutMillis: 5000,
+    connectionTimeoutMillis: 10000,
   });
   pool.on("error", (err) => {
     console.error("[db] pool error", err.message);
