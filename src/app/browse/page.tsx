@@ -74,7 +74,7 @@ export default async function BrowsePage() {
       <Card className="mt-6">
         <CardContent className="py-4 text-sm text-muted-foreground">
           Tip: Use search above to find a module instantly — try{" "}
-          <Link href="/search?q=PLU411S" className="underline hover:text-foreground">
+          <Link prefetch={false} href="/search?q=PLU411S" className="underline hover:text-foreground">
             PLU411S
           </Link>{" "}
           (canonical, appears in 10+ programmes, one row).
@@ -113,11 +113,11 @@ function FacultyCard({ faculty, allSchools, facultyIdMap }: { faculty: { id: str
           </ul>
         )}
         <div className="mt-4 flex gap-2">
-          <Link href={`/browse/${faculty.slug}`} className="text-sm font-medium hover:underline">
+          <Link prefetch={false} href={`/browse/${faculty.slug}`} className="text-sm font-medium hover:underline">
             Explore {faculty.code} →
           </Link>
           <span className="text-muted-foreground text-sm">·</span>
-          <Link href={`/search?q=${faculty.code}`} className="text-sm text-muted-foreground hover:text-foreground hover:underline">
+          <Link prefetch={false} href={`/search?q=${faculty.code}`} className="text-sm text-muted-foreground hover:text-foreground hover:underline">
             Search {faculty.code}
           </Link>
         </div>
@@ -149,7 +149,7 @@ async function BrowseHierarchy({ faculties }: { faculties: { id: string; slug: s
         <CardContent>
           <div className="grid gap-2 sm:grid-cols-2">
             {allDepts.map((d) => (
-              <Link key={d.id} href={`/search?q=${d.slug}`} className="rounded-xl border px-3 py-2 text-sm hover:bg-accent">
+              <Link prefetch={false} key={d.id} href={`/search?q=${d.slug}`} className="rounded-xl border px-3 py-2 text-sm hover:bg-accent">
                 {d.name}
               </Link>
             ))}

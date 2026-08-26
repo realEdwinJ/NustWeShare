@@ -59,7 +59,7 @@ export default async function ModulePage({ params }: { params: Promise<{ code: s
     return (
       <Container className="py-8">
         <div className="text-sm text-muted-foreground">
-          <Link href="/browse" className="hover:underline">
+          <Link prefetch={false} href="/browse" className="hover:underline">
             Browse
           </Link>{" "}
           / {m.code}
@@ -84,7 +84,7 @@ export default async function ModulePage({ params }: { params: Promise<{ code: s
           <CardContent>
             <div className="grid gap-2 sm:grid-cols-2">
               {links.map((l) => (
-                <Link key={l.code} href={`/browse/${l.code}`} className="rounded-xl border px-3 py-2 text-sm hover:bg-accent">
+                <Link prefetch={false} key={l.code} href={`/browse/${l.code}`} className="rounded-xl border px-3 py-2 text-sm hover:bg-accent">
                   <span className="font-mono font-semibold">{l.code}</span> — <span className="text-muted-foreground">{l.name.slice(0, 50)}</span>
                   {l.yearLevel && <Badge variant="outline" className="ml-2">Year {l.yearLevel} Sem {l.semester}</Badge>}
                 </Link>
@@ -104,7 +104,7 @@ export default async function ModulePage({ params }: { params: Promise<{ code: s
               <div className="py-6 text-center">
                 <p className="text-sm text-muted-foreground">No papers yet for this module — be the first to share.</p>
                 <p className="mt-1 text-xs text-muted-foreground">Every paper helps the next NUST student.</p>
-                <Link href="/upload" className="mt-4 inline-flex items-center justify-center rounded-xl bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground hover:bg-slate-800 min-h-[44px]">
+                <Link prefetch={false} href="/upload" className="mt-4 inline-flex items-center justify-center rounded-xl bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground hover:bg-slate-800 min-h-[44px]">
                   Upload for {m.code}
                 </Link>
                 <div className="mt-6 grid gap-2 text-left sm:grid-cols-2">
@@ -125,7 +125,7 @@ export default async function ModulePage({ params }: { params: Promise<{ code: s
                       <p className="text-sm font-semibold">{year}</p>
                       <div className="mt-2 flex flex-wrap gap-2">
                         {list.map((p) => (
-                          <Link key={p.id} href={`/papers/${p.id}`}>
+                          <Link prefetch={false} key={p.id} href={`/papers/${p.id}`}>
                             <Badge variant="secondary" className="hover:bg-secondary/80">
                               {p.assessmentType} {p.assessmentNumber ? ` ${p.assessmentNumber}` : ""} · Sem {p.semester} →
                             </Badge>
@@ -140,10 +140,10 @@ export default async function ModulePage({ params }: { params: Promise<{ code: s
         </Card>
 
         <div className="mt-6 flex gap-3 text-sm">
-          <Link href="/browse" className="hover:underline">
+          <Link prefetch={false} href="/browse" className="hover:underline">
             ← Browse
           </Link>
-          <Link href={`/search?q=${m.code}`} className="text-muted-foreground hover:text-foreground hover:underline">
+          <Link prefetch={false} href={`/search?q=${m.code}`} className="text-muted-foreground hover:text-foreground hover:underline">
             Search {m.code}
           </Link>
         </div>

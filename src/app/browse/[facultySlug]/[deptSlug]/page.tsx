@@ -37,11 +37,11 @@ export default async function DeptPage({ params }: { params: Promise<{ facultySl
     return (
       <Container className="py-8">
         <div className="text-sm text-muted-foreground">
-          <Link href="/browse" className="hover:underline">
+          <Link prefetch={false} href="/browse" className="hover:underline">
             Browse
           </Link>{" "}
           /{" "}
-          <Link href={`/browse/${facultySlug}`} className="hover:underline">
+          <Link prefetch={false} href={`/browse/${facultySlug}`} className="hover:underline">
             {fac[0].code}
           </Link>{" "}
           / {dept[0].name}
@@ -56,7 +56,7 @@ export default async function DeptPage({ params }: { params: Promise<{ facultySl
         ) : (
           <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {progs.map((p) => (
-              <Link key={p.id} href={`/browse/${facultySlug}/${deptSlug}/${p.code}`} className="group">
+              <Link prefetch={false} key={p.id} href={`/browse/${facultySlug}/${deptSlug}/${p.code}`} className="group">
                 <Card className="h-full hover:border-foreground/20 transition-colors">
                   <CardHeader className="pb-2">
                     <div className="flex items-start justify-between gap-2">

@@ -71,11 +71,11 @@ export default async function HomePage() {
             <div className="mt-8">
               <SearchBar large placeholder="Search module code or name — e.g. MCI511S" />
               <p className="mt-3 text-xs text-muted-foreground">
-                Try: <Link href="/search?q=MCI511S" className="underline hover:text-foreground">MCI511S</Link>
+                Try: <Link prefetch={false} href="/search?q=MCI511S" className="underline hover:text-foreground">MCI511S</Link>
                 {" · "}
-                <Link href="/search?q=PLU411S" className="underline hover:text-foreground">PLU411S</Link>
+                <Link prefetch={false} href="/search?q=PLU411S" className="underline hover:text-foreground">PLU411S</Link>
                 {" · "}
-                <Link href="/search?q=COA511S" className="underline hover:text-foreground">COA511S</Link>
+                <Link prefetch={false} href="/search?q=COA511S" className="underline hover:text-foreground">COA511S</Link>
               </p>
             </div>
           </div>
@@ -87,12 +87,12 @@ export default async function HomePage() {
         <Container>
           <div className="flex items-baseline justify-between gap-4 mb-6">
             <h2 className="text-xl font-semibold tracking-tight">Browse by Faculty</h2>
-            <Link href="/browse" className="text-sm font-medium hover:underline">
+            <Link prefetch={false} href="/browse" className="text-sm font-medium hover:underline">
               View all →
             </Link>
           </div>
           <div className="grid gap-6 md:grid-cols-2">
-            <Link href="/browse?faculty=febe" className="group">
+            <Link prefetch={false} href="/browse?faculty=febe" className="group">
               <Card className="h-full transition-colors group-hover:border-foreground/20">
                 <CardHeader>
                   <div className="flex items-start justify-between gap-3">
@@ -112,7 +112,7 @@ export default async function HomePage() {
                 </CardContent>
               </Card>
             </Link>
-            <Link href="/browse?faculty=fci" className="group">
+            <Link prefetch={false} href="/browse?faculty=fci" className="group">
               <Card className="h-full transition-colors group-hover:border-foreground/20">
                 <CardHeader>
                   <div className="flex items-start justify-between gap-3">
@@ -141,7 +141,7 @@ export default async function HomePage() {
         <Container>
           <div className="flex items-baseline justify-between gap-4 mb-4">
             <h2 className="text-lg font-semibold">Popular Modules</h2>
-            <Link href="/browse" className="text-sm font-medium hover:underline hidden sm:inline">
+            <Link prefetch={false} href="/browse" className="text-sm font-medium hover:underline hidden sm:inline">
               Browse all modules →
             </Link>
           </div>
@@ -155,7 +155,7 @@ export default async function HomePage() {
               { code: "EPR511S", name: "English in Practice", depts: "8 programmes" },
               { code: "MCI521S", name: "Mathematics for Computing 1B", depts: "6 programmes" },
             ].map((m) => (
-              <Link key={m.code} href={`/modules/${m.code.toLowerCase()}`} className="group">
+              <Link prefetch={false} key={m.code} href={`/modules/${m.code.toLowerCase()}`} className="group">
                 <Card className="h-full hover:border-foreground/20 transition-colors">
                   <CardContent className="pt-6">
                     <div className="flex items-start justify-between gap-2">
@@ -177,7 +177,7 @@ export default async function HomePage() {
         <Container>
           <div className="flex items-baseline justify-between gap-4 mb-4">
             <h2 className="text-lg font-semibold">Recently Added Papers</h2>
-            <Link href="/browse" className="text-sm font-medium hover:underline hidden sm:inline">
+            <Link prefetch={false} href="/browse" className="text-sm font-medium hover:underline hidden sm:inline">
               Browse papers →
             </Link>
           </div>
@@ -187,10 +187,10 @@ export default async function HomePage() {
                 <div className="py-4 text-center">
                   <p className="text-sm text-muted-foreground max-w-md mx-auto">No papers yet — be the first to share. Every paper helps the next NUST student. Upload is anonymous and takes less than a minute.</p>
                   <div className="mt-6 flex justify-center gap-3">
-                    <Link href="/upload" className="inline-flex items-center justify-center rounded-xl bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground hover:bg-slate-800 min-h-[44px]">
+                    <Link prefetch={false} href="/upload" className="inline-flex items-center justify-center rounded-xl bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground hover:bg-slate-800 min-h-[44px]">
                       Upload Papers
                     </Link>
-                    <Link href="/browse" className="inline-flex items-center justify-center rounded-xl border bg-background px-5 py-2.5 text-sm font-medium hover:bg-accent min-h-[44px]">
+                    <Link prefetch={false} href="/browse" className="inline-flex items-center justify-center rounded-xl border bg-background px-5 py-2.5 text-sm font-medium hover:bg-accent min-h-[44px]">
                       Browse Modules
                     </Link>
                   </div>
@@ -198,7 +198,7 @@ export default async function HomePage() {
               ) : (
                 <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                   {recentPapers.map((p) => (
-                    <Link key={p.id} href={`/papers/${p.id}`} className="group rounded-xl border p-4 hover:bg-accent">
+                    <Link prefetch={false} key={p.id} href={`/papers/${p.id}`} className="group rounded-xl border p-4 hover:bg-accent">
                       <p className="font-mono text-sm font-semibold">{p.moduleCode}</p>
                       <p className="text-sm font-medium group-hover:underline">{p.moduleName}</p>
                       <p className="text-xs text-muted-foreground mt-1">
@@ -238,7 +238,7 @@ export default async function HomePage() {
                     ))}
                   </ul>
                 )}
-                <Link href="/leaderboard" className="mt-4 inline-flex text-sm font-medium hover:underline">
+                <Link prefetch={false} href="/leaderboard" className="mt-4 inline-flex text-sm font-medium hover:underline">
                   View leaderboard →
                 </Link>
               </CardContent>
@@ -250,7 +250,7 @@ export default async function HomePage() {
               </CardHeader>
               <CardContent>
                 <p className="text-sm text-primary-foreground/90">Upload up to 10 PDFs at once. Pick the module first (required), then add year/type if you can. Skip if you&apos;re in a hurry — we&apos;ll keep it organized.</p>
-                <Link href="/upload" className="mt-6 inline-flex items-center justify-center rounded-xl bg-white px-6 py-2.5 text-sm font-medium text-slate-900 hover:bg-zinc-100 min-h-[44px]">
+                <Link prefetch={false} href="/upload" className="mt-6 inline-flex items-center justify-center rounded-xl bg-white px-6 py-2.5 text-sm font-medium text-slate-900 hover:bg-zinc-100 min-h-[44px]">
                   Upload Papers — no account needed
                 </Link>
               </CardContent>

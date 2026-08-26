@@ -30,6 +30,20 @@ function getEnvVarFromCloudflare(name: string): string | undefined {
   return undefined;
 }
 
+function sanitizeConnectionString(cs: string): string {
+  // Neon pooler URL with channel_binding=require causes pg 8.x to intermittently fail on SCRAM auth (channel binding not supported in Node pg).
+  // Strip channel_binding for Node/Hyperdrive - Hyperdrive handles it internally.
+  try {
+    const url = new URL(cs);
+    if (url.searchParams.has("channel_binding")) {
+      url.searchParams.delete("channel_binding");
+      return url.toString();
+    }
+  } catch {}
+  // Fallback string replace
+  return cs.replace(/[?&]channel_binding=require/, "").replace(/channel_binding=require&?/, "");
+}
+
 function getConnectionString(): string {
   let hyperdrivePresent = false;
   let hyperdriveConnStr: string | undefined;
@@ -54,7 +68,7 @@ function getConnectionString(): string {
   }
 
   if (hyperdriveConnStr) {
-    return hyperdriveConnStr;
+    return sanitizeConnectionString(hyperdriveConnStr);
   }
 
   // Prefer Hyperdrive env DATABASE_URL if present (wrangler secret), then process.env
@@ -77,7 +91,7 @@ function getConnectionString(): string {
       // fallback if Hyperdrive binding is misconfigured (graceful degradation vs crash).
       console.warn("[db] Workers runtime: HYPERDRIVE missing, falling back to DATABASE_URL (prefix:", databaseUrl.slice(0, 20), ")");
     }
-    return databaseUrl;
+    return sanitizeConnectionString(databaseUrl);
   }
 
   // No connection string found anywhere
@@ -105,18 +119,23 @@ function getPool(): Pool {
   pool = new Pool({
     connectionString,
     ssl: isHyperdrive ? undefined : needsSsl ? { rejectUnauthorized: false } : undefined,
-    max: 5, // keep low for Hyperdrive (pooled) and Neon (serverless); 10 caused contention
+    max: 10, // increased from 5 to handle concurrent RSC prefetch (home has ~6 queries, browse faculty 6) — prevents click->error then refresh works
     idleTimeoutMillis: 30000,
     connectionTimeoutMillis: 15000,
+    allowExitOnIdle: false,
     // Never use statement_timeout via pool options — let Hyperdrive manage
   });
   pool.on("error", (err) => {
     console.error("[db] pool error", err.message);
     // Don't crash process; allow retry. Close pool on fatal error to allow fresh connection on next getDb()
-    if ((err as any)?.code === "ECONNRESET" || (err as any)?.message?.includes("terminating")) {
+    if ((err as any)?.code === "ECONNRESET" || (err as any)?.message?.includes("terminating") || (err as any)?.message?.includes("timeout")) {
       pool = null;
       dbInstance = null;
     }
+  });
+  pool.on("connect", () => {
+    // Optional: log pool connect for debugging transient click errors
+    // console.log("[db] pool connect");
   });
   return pool;
 }

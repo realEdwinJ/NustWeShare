@@ -28,7 +28,7 @@
 		{
 			"binding": "HYPERDRIVE",
 			"id": "507d02782751464e9d9b46bcd732f2ea",
-			"localConnectionString": "postgresql://neondb_owner:npg_IrtjP2Vcb9BW@ep-steep-dew-ayob9oue-pooler.c-5.us-east-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require"
+			"localConnectionString": "postgresql://neondb_owner:npg_IrtjP2Vcb9BW@ep-steep-dew-ayob9oue-pooler.c-5.us-east-2.aws.neon.tech/neondb?sslmode=require"
 		}
 	],
 	"env": {
@@ -40,7 +40,7 @@
 				{
 					"binding": "HYPERDRIVE",
 					"id": "507d02782751464e9d9b46bcd732f2ea",
-					"localConnectionString": "postgresql://neondb_owner:npg_IrtjP2Vcb9BW@ep-steep-dew-ayob9oue-pooler.c-5.us-east-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require"
+					"localConnectionString": "postgresql://neondb_owner:npg_IrtjP2Vcb9BW@ep-steep-dew-ayob9oue-pooler.c-5.us-east-2.aws.neon.tech/neondb?sslmode=require"
 				}
 			],
 			"r2_buckets": [
