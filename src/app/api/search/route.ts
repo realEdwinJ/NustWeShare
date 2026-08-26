@@ -34,10 +34,7 @@ export async function GET(req: NextRequest) {
       .select()
       .from(modules)
       .where(sql`${modules.code} ILIKE ${like} OR ${modules.name} ILIKE ${like}`)
-      .orderBy(
-        sql`CASE WHEN lower(${modules.code}) = lower(${q}) THEN 0 WHEN ${modules.code} ILIKE ${prefixLike} THEN 1 WHEN ${modules.code} ILIKE ${like} THEN 2 WHEN ${modules.name} ILIKE ${prefixLike} THEN 3 ELSE 4 END`,
-        modules.code
-      )
+      .orderBy(modules.code)
       .limit(20);
 
     // Programmes search
@@ -52,8 +49,9 @@ export async function GET(req: NextRequest) {
       { data: { modules: modRows, programmes: progRows }, query: q },
       { headers: { "Cache-Control": "public, s-maxage=60" } }
     );
-  } catch (e) {
-    console.error("[api/search]", e);
-    return NextResponse.json({ error: { code: "DB_ERROR", message: "Search unavailable." } }, { status: 500 });
+  } catch (e: any) {
+    console.error("[api/search]", e, e?.cause);
+    const cause = e?.cause ? ` | cause: ${(e.cause as any)?.message?.slice(0, 300) || String(e.cause).slice(0, 300)}` : "";
+    return NextResponse.json({ error: { code: "DB_ERROR", message: "Search unavailable.", detail: (e?.message?.slice(0, 300) || String(e).slice(0, 300)) + cause } }, { status: 500 });
   }
 }

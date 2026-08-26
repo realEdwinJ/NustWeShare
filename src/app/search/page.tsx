@@ -20,7 +20,7 @@ async function search(q: string) {
       .select()
       .from(modules)
       .where(sql`${modules.code} ILIKE ${like} OR ${modules.name} ILIKE ${like}`)
-      .orderBy(sql`CASE WHEN lower(${modules.code}) = lower(${q}) THEN 0 WHEN ${modules.code} ILIKE ${prefixLike} THEN 1 WHEN ${modules.code} ILIKE ${like} THEN 2 ELSE 3 END`, modules.code)
+      .orderBy(modules.code)
       .limit(20);
     const progs = await db
       .select()
