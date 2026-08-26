@@ -19,17 +19,11 @@ async function getFaculties() {
   }
 }
 
-async function getSchoolsForFaculty(slug: string) {
+async function getSchoolsForFaculty(slug: string, allSchools: Array<{ id: string; facultyId: string; name: string; code: string | null; slug: string }>, facultyIdMap: Map<string, string>) {
   try {
-    const { getDb } = await import("@/lib/db");
-    const { faculties } = await import("@/db/schema/faculties");
-    const { schools } = await import("@/db/schema/schools");
-    const { eq } = await import("drizzle-orm");
-    const db = getDb();
-    const fac = await db.select().from(faculties).where(eq(faculties.slug, slug)).limit(1);
-    if (fac.length === 0) return [];
-    const rows = await db.select().from(schools).where(eq(schools.facultyId, fac[0].id)).orderBy(schools.name);
-    return rows;
+    const facultyId = facultyIdMap.get(slug);
+    if (!facultyId) return [];
+    return allSchools.filter((s) => s.facultyId === facultyId);
   } catch {
     return [];
   }
@@ -54,6 +48,17 @@ export default async function BrowsePage() {
     );
   }
 
+  // Fetch all schools once for efficient rendering (avoid N+1)
+  let allSchools: Array<{ id: string; facultyId: string; name: string; code: string | null; slug: string }> = [];
+  try {
+    const { getDb } = await import("@/lib/db");
+    const { schools } = await import("@/db/schema/schools");
+    const db = getDb();
+    allSchools = await db.select().from(schools);
+  } catch {}
+
+  const facultyIdMap = new Map(faculties.map((f) => [f.slug, f.id]));
+
   // For Stage 5, show faculties with school counts fetched lazily
   return (
     <Container className="py-8">
@@ -62,7 +67,7 @@ export default async function BrowsePage() {
 
       <div className="mt-6 grid gap-6 md:grid-cols-2">
         {faculties.map((fac) => (
-          <FacultyCard key={fac.id} faculty={fac} />
+          <FacultyCard key={fac.id} faculty={fac} allSchools={allSchools} facultyIdMap={facultyIdMap} />
         ))}
       </div>
 
@@ -81,8 +86,8 @@ export default async function BrowsePage() {
   );
 }
 
-async function FacultyCard({ faculty }: { faculty: { id: string; code: string; name: string; slug: string } }) {
-  const schools = await getSchoolsForFaculty(faculty.slug);
+function FacultyCard({ faculty, allSchools, facultyIdMap }: { faculty: { id: string; code: string; name: string; slug: string }; allSchools: Array<{ id: string; facultyId: string; name: string; code: string | null; slug: string }>; facultyIdMap: Map<string, string> }) {
+  const schools = allSchools.filter((s) => s.facultyId === facultyIdMap.get(faculty.slug));
   return (
     <Card className="h-full">
       <CardHeader>

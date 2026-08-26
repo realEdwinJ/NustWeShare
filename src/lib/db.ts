@@ -78,9 +78,9 @@ function getPool(): Pool {
         : process.env.NODE_ENV === "production" || connectionString.includes("sslmode=require")
           ? { rejectUnauthorized: false }
           : undefined,
-    max: isHyperdrive ? 5 : 5,
-    idleTimeoutMillis: 10000,
-    connectionTimeoutMillis: 10000,
+    max: isHyperdrive ? 10 : 5,
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 30000,
   });
   pool.on("error", (err) => {
     console.error("[db] pool error", err.message);
