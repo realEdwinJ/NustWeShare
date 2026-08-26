@@ -4,7 +4,8 @@
 	"main": ".open-next/worker.js",
 	"compatibility_date": "2026-08-25",
 	"compatibility_flags": [
-		"nodejs_compat"
+		"nodejs_compat",
+		"nodejs_compat_populate_process_env"
 	],
 	"assets": {
 		"directory": ".open-next/assets",
@@ -20,7 +21,14 @@
 		{
 			"binding": "PAPERS_BUCKET",
 			"bucket_name": "nustweshare-papers",
-			"preview_bucket_name": "nustweshare-papers-preview"
+			"preview_bucket_name": "nustweshare-papers"
+		}
+	],
+	"hyperdrive": [
+		{
+			"binding": "HYPERDRIVE",
+			"id": "507d02782751464e9d9b46bcd732f2ea",
+			"localConnectionString": "postgresql://user:pass@localhost:5432/db"
 		}
 	],
 	"env": {
@@ -28,20 +36,20 @@
 			"vars": {
 				"NEXT_PUBLIC_APP_URL": "https://preview.nustweshare.workers.dev"
 			},
+			"hyperdrive": [
+				{
+					"binding": "HYPERDRIVE",
+					"id": "507d02782751464e9d9b46bcd732f2ea",
+					"localConnectionString": "postgresql://user:pass@localhost:5432/db"
+				}
+			],
 			"r2_buckets": [
 				{
 					"binding": "PAPERS_BUCKET",
-					"bucket_name": "nustweshare-papers-preview",
-					"preview_bucket_name": "nustweshare-papers-preview"
+					"bucket_name": "nustweshare-papers",
+					"preview_bucket_name": "nustweshare-papers"
 				}
 			]
 		}
-	},
-	"hyperdrive": [
-		{
-			"binding": "HYPERDRIVE",
-			"id": "507d02782751464e9d9b46bcd732f2ea",
-			"localConnectionString": "postgresql://user:pass@localhost:5432/db"
-		}
-	]
+	}
 }

@@ -208,8 +208,8 @@ export async function POST(req: NextRequest) {
       // Text fingerprint Level 3 (Spec 28) — try extract text via pdfjs
       let textFingerprint: string | null = null;
       try {
-        // Use pdfjs-dist to extract text (Node)
-        const pdfjs: any = await import("pdfjs-dist/legacy/build/pdf.mjs");
+        // Use pdfjs-serverless to extract text in Workers
+        const pdfjs: any = await import("pdfjs-serverless");
         const loadingTask = pdfjs.getDocument({ data: buf, verbosity: 0 });
         const pdf = await loadingTask.promise;
         let rawText = "";

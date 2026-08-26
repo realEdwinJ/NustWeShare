@@ -33,6 +33,8 @@ yarn-error.log*
 # env files
 .env
 !.env.example
+# local wrangler dev vars (may contain secrets/connection strings)
+.dev.vars
 # local uploads (dev R2 fallback)
 uploads/
 
