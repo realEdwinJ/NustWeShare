@@ -37,7 +37,8 @@ export async function GET(_req: NextRequest) {
     const rows = await db.select().from(faculties).limit(1);
     dbOk = true;
   } catch (e: any) {
-    dbError = e?.message?.slice(0, 500) || String(e).slice(0, 500);
+    const cause = e?.cause ? ` | cause: ${(e.cause as any)?.message?.slice(0, 300) || String(e.cause).slice(0, 300)}` : "";
+    dbError = (e?.message?.slice(0, 400) || String(e).slice(0, 400)) + cause;
   }
 
   return NextResponse.json({
