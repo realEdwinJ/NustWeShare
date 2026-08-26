@@ -44,7 +44,7 @@ export default async function FacultyBrowsePage({ params }: { params: Promise<{ 
     return (
       <Container className="py-8">
         <div className="text-sm text-muted-foreground">
-          <Link prefetch={false} href="/browse" className="hover:text-foreground hover:underline">
+          <Link href="/browse" className="hover:text-foreground hover:underline">
             Browse
           </Link>{" "}
           / {faculty.code}
@@ -57,7 +57,7 @@ export default async function FacultyBrowsePage({ params }: { params: Promise<{ 
             <CardContent className="py-10 text-center">
               <p className="text-sm font-medium">No schools found for {faculty.code} yet.</p>
               <p className="text-sm text-muted-foreground mt-1">Academic data is being updated — check back soon or try search.</p>
-              <Link prefetch={false} href="/search" className="mt-4 inline-flex rounded-xl border px-4 py-2 text-sm hover:bg-accent">Search modules</Link>
+              <Link href="/search" className="mt-4 inline-flex rounded-xl border px-4 py-2 text-sm hover:bg-accent">Search modules</Link>
             </CardContent>
           </Card>
         ) : (
@@ -76,7 +76,7 @@ export default async function FacultyBrowsePage({ params }: { params: Promise<{ 
                     ) : (
                       <div className="grid gap-3 sm:grid-cols-2">
                         {deps.map((dept) => (
-                          <Link prefetch={false} key={dept.id} href={`/browse/${faculty.slug}/${dept.slug}`} className="group rounded-xl border p-4 hover:border-foreground/20 transition-colors">
+                          <Link key={dept.id} href={`/browse/${faculty.slug}/${dept.slug}`} className="group rounded-xl border p-4 hover:border-foreground/20 transition-colors">
                             <div className="flex items-start justify-between gap-2">
                               <span className="text-sm font-medium group-hover:underline">{dept.name}</span>
                               <Badge variant="outline">{progByDept.get(dept.id) || 0} programmes</Badge>
@@ -94,10 +94,10 @@ export default async function FacultyBrowsePage({ params }: { params: Promise<{ 
         )}
 
         <div className="mt-6 flex gap-3">
-          <Link prefetch={false} href="/browse" className="text-sm font-medium hover:underline">
+          <Link href="/browse" className="text-sm font-medium hover:underline">
             ← Back to faculties
           </Link>
-          <Link prefetch={false} href={`/search?q=${faculty.code}`} className="text-sm text-muted-foreground hover:text-foreground hover:underline">
+          <Link href={`/search?q=${faculty.code}`} className="text-sm text-muted-foreground hover:text-foreground hover:underline">
             Search {faculty.code}
           </Link>
         </div>
@@ -108,7 +108,7 @@ export default async function FacultyBrowsePage({ params }: { params: Promise<{ 
     return (
       <Container className="py-8">
         <p className="text-sm text-muted-foreground">Could not load faculty — database not connected.</p>
-        <Link prefetch={false} href="/browse" className="text-sm underline">
+        <Link href="/browse" className="text-sm underline">
           Back
         </Link>
       </Container>

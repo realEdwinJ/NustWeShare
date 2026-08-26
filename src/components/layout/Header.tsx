@@ -20,7 +20,7 @@ export function Header() {
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/80">
       <Container className="flex h-16 items-center justify-between">
-        <Link prefetch={false} href="/" className="flex items-center gap-2">
+        <Link href="/" className="flex items-center gap-2">
           <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground text-sm font-bold">
             NW
           </span>
@@ -33,8 +33,7 @@ export function Header() {
           {nav.map((item) => {
             const active = pathname === item.href || (item.href !== "/" && pathname.startsWith(item.href));
             return (
-              <Link prefetch={false}
-                key={item.href}
+              <Link key={item.href}
                 href={item.href}
                 className={cn(
                   "rounded-lg px-3 py-2 text-sm font-medium transition-colors min-h-[44px] flex items-center",
@@ -46,8 +45,7 @@ export function Header() {
               </Link>
             );
           })}
-          <Link prefetch={false}
-            href="/dashboard"
+          <Link href="/dashboard"
             className={cn(
               "rounded-lg px-3 py-2 text-sm font-medium transition-colors min-h-[44px] flex items-center",
               pathname.startsWith("/dashboard") ? "bg-secondary text-foreground" : "text-muted-foreground hover:text-foreground hover:bg-accent"
@@ -58,8 +56,7 @@ export function Header() {
         </nav>
 
         <div className="hidden md:flex items-center gap-2">
-          <Link prefetch={false}
-            href="/upload"
+          <Link href="/upload"
             className="inline-flex items-center justify-center rounded-xl text-sm font-medium bg-primary text-primary-foreground hover:bg-slate-800 h-9 px-3 min-h-[36px]"
           >
             Upload Papers
@@ -84,8 +81,7 @@ export function Header() {
         <div className="md:hidden border-t bg-background">
           <Container className="py-3 flex flex-col gap-1">
             {nav.map((item) => (
-              <Link prefetch={false}
-                key={item.href}
+              <Link key={item.href}
                 href={item.href}
                 onClick={() => setOpen(false)}
                 className={cn(
@@ -96,15 +92,13 @@ export function Header() {
                 {item.label}
               </Link>
             ))}
-            <Link prefetch={false}
-              href="/dashboard"
+            <Link href="/dashboard"
               onClick={() => setOpen(false)}
               className="rounded-xl px-3 py-3 text-sm font-medium hover:bg-accent min-h-[44px] flex items-center"
             >
               Profile
             </Link>
-            <Link prefetch={false}
-              href="/upload"
+            <Link href="/upload"
               onClick={() => setOpen(false)}
               className="mt-2 inline-flex items-center justify-center rounded-xl text-sm font-medium bg-primary text-primary-foreground hover:bg-slate-800 h-10 px-5 min-h-[44px]"
             >

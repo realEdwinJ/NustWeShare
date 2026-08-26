@@ -53,7 +53,7 @@ export default async function PaperPage({ params }: { params: Promise<{ id: stri
         <Container className="py-16 text-center">
           <h1 className="text-xl font-semibold">This paper is no longer available</h1>
           <p className="mt-2 text-sm text-muted-foreground">It was removed after community reports. The file is no longer available.</p>
-          <Link prefetch={false} href="/" className="mt-6 inline-flex rounded-xl bg-primary px-5 py-2.5 text-sm text-primary-foreground">Go home</Link>
+          <Link href="/" className="mt-6 inline-flex rounded-xl bg-primary px-5 py-2.5 text-sm text-primary-foreground">Go home</Link>
         </Container>
       );
     }
@@ -86,7 +86,7 @@ export default async function PaperPage({ params }: { params: Promise<{ id: stri
     <Container className="py-6">
       <ViewTracker paperId={paper.id} />
       <div className="text-sm text-muted-foreground">
-        <Link prefetch={false} href="/browse" className="hover:underline">Browse</Link> / <Link prefetch={false} href={`/modules/${moduleData.code.toLowerCase()}`} className="hover:underline">{moduleData.code}</Link> / {paper.academicYear}
+        <Link href="/browse" className="hover:underline">Browse</Link> / <Link href={`/modules/${moduleData.code.toLowerCase()}`} className="hover:underline">{moduleData.code}</Link> / {paper.academicYear}
       </div>
 
       <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">

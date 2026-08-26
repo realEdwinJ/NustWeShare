@@ -38,15 +38,15 @@ export default async function ProgrammeModulesPage({ params }: { params: Promise
     return (
       <Container className="py-8">
         <div className="text-sm text-muted-foreground">
-          <Link prefetch={false} href="/browse" className="hover:underline">
+          <Link href="/browse" className="hover:underline">
             Browse
           </Link>{" "}
           /{" "}
-          <Link prefetch={false} href={`/browse/${facultySlug}`} className="hover:underline">
+          <Link href={`/browse/${facultySlug}`} className="hover:underline">
             {facultySlug.toUpperCase()}
           </Link>{" "}
           /{" "}
-          <Link prefetch={false} href={`/browse/${facultySlug}/${deptSlug}`} className="hover:underline">
+          <Link href={`/browse/${facultySlug}/${deptSlug}`} className="hover:underline">
             {deptSlug}
           </Link>{" "}
           / {code}
@@ -77,7 +77,7 @@ export default async function ProgrammeModulesPage({ params }: { params: Promise
                   <CardContent>
                     <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
                       {mods.map((m) => (
-                        <Link prefetch={false} key={m.code} href={`/modules/${m.code.toLowerCase()}`} className="group rounded-xl border px-3 py-3 hover:bg-accent">
+                        <Link key={m.code} href={`/modules/${m.code.toLowerCase()}`} className="group rounded-xl border px-3 py-3 hover:bg-accent">
                           <div className="flex items-center justify-between gap-2">
                             <span className="font-mono text-sm font-semibold">{m.code}</span>
                             {m.semester && <Badge variant="outline">Sem {m.semester}</Badge>}
