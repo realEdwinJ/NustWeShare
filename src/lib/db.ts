@@ -48,12 +48,14 @@ function getConnectionString(): string {
   let hyperdrivePresent = false;
   let hyperdriveConnStr: string | undefined;
 
+  let hyperdriveId: string | undefined;
   try {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const { getCloudflareContext } = require("@opennextjs/cloudflare");
     const ctx = getCloudflareContext();
     hyperdrivePresent = !!ctx?.env?.HYPERDRIVE;
     hyperdriveConnStr = ctx?.env?.HYPERDRIVE?.connectionString as string | undefined;
+    hyperdriveId = (ctx?.env?.HYPERDRIVE as any)?.id as string | undefined;
     // Also check if DATABASE_URL is available via Hyperdrive env for fallback debugging
     if (!hyperdriveConnStr && ctx?.env?.DATABASE_URL) {
       hyperdriveConnStr = undefined; // keep separate
@@ -67,8 +69,14 @@ function getConnectionString(): string {
     }
   }
 
-  if (hyperdriveConnStr) {
+  // If Hyperdrive placeholder ID is still the default fake one, ignore it and force DATABASE_URL fallback
+  // This prevents "database not connected" on first click when Hyperdrive not properly configured in Cloudflare dashboard
+  const isPlaceholderHyperdrive = hyperdriveId === "507d02782751464e9d9b46bcd732f2ea";
+  if (hyperdriveConnStr && !isPlaceholderHyperdrive) {
     return sanitizeConnectionString(hyperdriveConnStr);
+  }
+  if (hyperdriveConnStr && isPlaceholderHyperdrive) {
+    console.warn("[db] Hyperdrive ID is placeholder, falling back to DATABASE_URL");
   }
 
   // Prefer Hyperdrive env DATABASE_URL if present (wrangler secret), then process.env
