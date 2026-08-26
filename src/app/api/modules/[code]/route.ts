@@ -10,7 +10,10 @@ export const dynamic = "force-dynamic";
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ code: string }> }) {
   const { code } = await params;
-  const normalizedCode = decodeURIComponent(code).toUpperCase();
+  const normalizedCode = decodeURIComponent(code).trim().toUpperCase();
+  if (!normalizedCode || normalizedCode.length > 20) {
+    return NextResponse.json({ error: { code: "VALIDATION_ERROR", message: "Invalid module code" } }, { status: 400 });
+  }
   try {
     const db = getDb();
     const mod = await db.select().from(modules).where(eq(modules.code, normalizedCode)).limit(1);
@@ -36,7 +39,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ cod
       { headers: { "Cache-Control": "public, s-maxage=3600" } }
     );
   } catch (e) {
-    console.error("[api/modules/[code]]", e);
+    console.error("[api/modules/[code]]", (e as any)?.message ?? e);
     return NextResponse.json({ error: { code: "DB_ERROR", message: "Could not load module." } }, { status: 500 });
   }
 }

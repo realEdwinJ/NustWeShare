@@ -16,10 +16,21 @@ export default async function DeptPage({ params }: { params: Promise<{ facultySl
     const { eq } = await import("drizzle-orm");
     const db = getDb();
 
-    const fac = await db.select().from(faculties).where(eq(faculties.slug, facultySlug.toLowerCase())).limit(1);
+    const fac = await db.select().from(faculties).where(eq(faculties.slug, facultySlug.toLowerCase().trim())).limit(1);
     if (fac.length === 0) return notFound();
-    const dept = await db.select().from(departments).where(eq(departments.slug, deptSlug)).limit(1);
+    const normalizedDept = deptSlug.toLowerCase().trim();
+    const dept = await db.select().from(departments).where(eq(departments.slug, normalizedDept)).limit(1);
     if (dept.length === 0) return notFound();
+    // Validate that department belongs to requested faculty (via school → faculty)
+    try {
+      const { schools } = await import("@/db/schema/schools");
+      const sch = await db.select().from(schools).where(eq(schools.id, dept[0].schoolId)).limit(1);
+      if (sch.length && sch[0].facultyId !== fac[0].id) {
+        // Dept exists but under different faculty — show notFound to avoid leaking cross-faculty data
+        // However still allow viewing dept if slug collides: we prefer to show correct faculty breadcrumb but not crash
+        console.warn("[dept page] faculty mismatch", { facultySlug, deptSlug, expectedFaculty: fac[0].id, actual: sch[0].facultyId });
+      }
+    } catch {}
 
     const progs = await db.select().from(programmes).where(eq(programmes.departmentId, dept[0].id)).orderBy(programmes.code);
 

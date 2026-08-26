@@ -43,35 +43,58 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: { code: "VALIDATION_ERROR", message: "Module is required. Please select a valid NUST module." } }, { status: 400 });
   }
 
-  // Validate module exists (Spec 60: server resolves canonical)
-  const db = getDb();
-  const mod = await db.select().from(modules).where(eq(modules.code, moduleId)).limit(1);
-  // Also try by id if code not found
-  let moduleRow = mod[0];
-  if (!moduleRow) {
-    const byId = await db.select().from(modules).where(eq(modules.id, moduleId)).limit(1);
-    moduleRow = byId[0];
+  // Validate module exists (Spec 60: server resolves canonical) — with graceful DB fallback
+  let db: ReturnType<typeof getDb>;
+  try {
+    db = getDb();
+  } catch (e: any) {
+    console.error("[upload] DB unavailable", e?.message ?? e);
+    return NextResponse.json({ error: { code: "DB_ERROR", message: "Upload temporarily unavailable — database not connected. Please try again." } }, { status: 503 });
   }
-  // Also try case-insensitive code match via ILIKE if still not found
-  if (!moduleRow) {
-    const { sql } = await import("drizzle-orm");
-    const byCodeCI = await db.select().from(modules).where(sql`lower(${modules.code}) = lower(${moduleId})`).limit(1);
-    moduleRow = byCodeCI[0];
+  let moduleRow: typeof modules.$inferSelect | undefined;
+  try {
+    const trimmed = moduleId.trim();
+    const mod = await db.select().from(modules).where(eq(modules.code, trimmed.toUpperCase())).limit(1);
+    moduleRow = mod[0];
+    if (!moduleRow) {
+      const byId = await db.select().from(modules).where(eq(modules.id, trimmed)).limit(1);
+      moduleRow = byId[0];
+    }
+    if (!moduleRow) {
+      const { sql } = await import("drizzle-orm");
+      const byCodeCI = await db.select().from(modules).where(sql`lower(${modules.code}) = lower(${trimmed})`).limit(1);
+      moduleRow = byCodeCI[0];
+    }
+  } catch (e: any) {
+    console.error("[upload] module lookup failed", e?.message ?? e);
+    return NextResponse.json({ error: { code: "DB_ERROR", message: "Could not verify module. Please try again." } }, { status: 500 });
   }
   if (!moduleRow) {
     return NextResponse.json({ error: { code: "MODULE_NOT_FOUND", message: "We couldn't find that module. Please select a valid NUST module." } }, { status: 404 });
   }
 
-  // Collect files
+  // Collect files — dedupe, handle both generic entries and explicit 'files' key
   const files: File[] = [];
-  for (const [key, value] of form.entries()) {
-    if (value instanceof File) files.push(value);
-    // Also handle 'files' as multiple entries with same key
+  const seen = new Set<string>();
+  for (const [, value] of form.entries()) {
+    if (value instanceof File && value.size > 0) {
+      const key = `${value.name}-${value.size}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        files.push(value);
+      }
+    }
   }
-  // Alternative: getAll
+  // Also ensure getAll('files') captured (some browsers send differently)
   try {
     const allFiles = form.getAll("files").filter((v) => v instanceof File) as File[];
-    if (allFiles.length > 0 && files.length === 0) files.push(...allFiles);
+    for (const f of allFiles) {
+      const key = `${f.name}-${f.size}`;
+      if (!seen.has(key) && f.size > 0) {
+        seen.add(key);
+        files.push(f);
+      }
+    }
   } catch {}
 
   if (files.length === 0) {
@@ -109,27 +132,44 @@ export async function POST(req: NextRequest) {
   }
 
   const storage = getStorage();
-  const ipHash = hashIp(ip);
-  // Determine faculty slug for R2 key — we need to find faculty via programmeModules → programme → department → school → faculty
-  // For MVP, use module code's department faculty, or fallback to 'fci'/'febe' via module code pattern (MCI etc are FCI, ELC would be FEBE)
-  // Simplify: try to find faculty via first programme that uses module
+  let ipHash: string;
+  try {
+    ipHash = hashIp(ip);
+  } catch {
+    ipHash = "unknown";
+  }
+  // Determine faculty slug for R2 key — prefer module's direct department → school → faculty, fallback to programme chain
   let facultySlug = "fci";
   try {
-    const { programmeModules } = await import("@/db/schema/programme_modules");
-    const { programmes } = await import("@/db/schema/programmes");
-    const { departments } = await import("@/db/schema/departments");
-    const { schools } = await import("@/db/schema/schools");
     const { faculties } = await import("@/db/schema/faculties");
-    const pm = await db.select().from(programmeModules).where(eq(programmeModules.moduleId, moduleRow.id)).limit(1);
-    if (pm.length > 0) {
-      const prog = await db.select().from(programmes).where(eq(programmes.id, pm[0].programmeId)).limit(1);
-      if (prog.length) {
-        const dept = await db.select().from(departments).where(eq(departments.id, prog[0].departmentId)).limit(1);
-        if (dept.length) {
-          const sch = await db.select().from(schools).where(eq(schools.id, dept[0].schoolId)).limit(1);
-          if (sch.length) {
-            const fac = await db.select().from(faculties).where(eq(faculties.id, sch[0].facultyId)).limit(1);
-            if (fac.length) facultySlug = fac[0].slug;
+    const { schools } = await import("@/db/schema/schools");
+    const { departments } = await import("@/db/schema/departments");
+    // First: try module.departmentId directly (canonical)
+    if (moduleRow.departmentId) {
+      const dept = await db.select().from(departments).where(eq(departments.id, moduleRow.departmentId)).limit(1);
+      if (dept.length) {
+        const sch = await db.select().from(schools).where(eq(schools.id, dept[0].schoolId)).limit(1);
+        if (sch.length) {
+          const fac = await db.select().from(faculties).where(eq(faculties.id, sch[0].facultyId)).limit(1);
+          if (fac.length) facultySlug = fac[0].slug;
+        }
+      }
+    }
+    // Fallback: via programmeModules chain if direct failed
+    if (facultySlug === "fci" && !moduleRow.departmentId) {
+      const { programmeModules } = await import("@/db/schema/programme_modules");
+      const { programmes } = await import("@/db/schema/programmes");
+      const pm = await db.select().from(programmeModules).where(eq(programmeModules.moduleId, moduleRow.id)).limit(1);
+      if (pm.length > 0) {
+        const prog = await db.select().from(programmes).where(eq(programmes.id, pm[0].programmeId)).limit(1);
+        if (prog.length) {
+          const dept = await db.select().from(departments).where(eq(departments.id, prog[0].departmentId)).limit(1);
+          if (dept.length) {
+            const sch = await db.select().from(schools).where(eq(schools.id, dept[0].schoolId)).limit(1);
+            if (sch.length) {
+              const fac = await db.select().from(faculties).where(eq(faculties.id, sch[0].facultyId)).limit(1);
+              if (fac.length) facultySlug = fac[0].slug;
+            }
           }
         }
       }

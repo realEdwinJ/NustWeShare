@@ -14,9 +14,28 @@ export type Env = z.infer<typeof envSchema>;
 
 let cached: Env | null = null;
 
+function getEnvSource(): Record<string, unknown> {
+  // Merge Cloudflare Workers env (via getCloudflareContext) + process.env for resilience
+  const src: Record<string, unknown> = { ...process.env };
+  try {
+    const { getCloudflareContext } = require("@opennextjs/cloudflare");
+    const ctx = getCloudflareContext();
+    if (ctx?.env) {
+      for (const [k, v] of Object.entries(ctx.env)) {
+        if (typeof v === "string" && v.length > 0) src[k] = v;
+        // Don't copy objects like HYPERDRIVE/PAPERS_BUCKET
+      }
+      // Ensure HYPERDRIVE presence doesn't trigger DATABASE_URL requirement
+      if (ctx.env.HYPERDRIVE?.connectionString) src["DATABASE_URL"] = src["DATABASE_URL"] || "hyperdrive-present";
+    }
+  } catch {}
+  return src;
+}
+
 export function getEnv(): Env {
   if (cached) return cached;
-  const parsed = envSchema.safeParse(process.env);
+  const source = getEnvSource();
+  const parsed = envSchema.safeParse(source);
   if (!parsed.success) {
     const formatted = parsed.error.issues
       .map((i) => `${i.path.join(".")}: ${i.message}`)

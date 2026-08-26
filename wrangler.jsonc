@@ -28,7 +28,7 @@
 		{
 			"binding": "HYPERDRIVE",
 			"id": "507d02782751464e9d9b46bcd732f2ea",
-			"localConnectionString": "postgresql://user:pass@localhost:5432/db"
+			"localConnectionString": "postgresql://neondb_owner:npg_IrtjP2Vcb9BW@ep-steep-dew-ayob9oue-pooler.c-5.us-east-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require"
 		}
 	],
 	"env": {
@@ -40,14 +40,14 @@
 				{
 					"binding": "HYPERDRIVE",
 					"id": "507d02782751464e9d9b46bcd732f2ea",
-					"localConnectionString": "postgresql://user:pass@localhost:5432/db"
+					"localConnectionString": "postgresql://neondb_owner:npg_IrtjP2Vcb9BW@ep-steep-dew-ayob9oue-pooler.c-5.us-east-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require"
 				}
 			],
 			"r2_buckets": [
 				{
 					"binding": "PAPERS_BUCKET",
-					"bucket_name": "nustweshare-papers",
-					"preview_bucket_name": "nustweshare-papers"
+					"bucket_name": "nustweshare-papers-preview",
+					"preview_bucket_name": "nustweshare-papers-preview"
 				}
 			]
 		}

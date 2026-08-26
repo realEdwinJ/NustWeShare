@@ -7,7 +7,8 @@ import { programmes } from "@/db/schema/programmes";
 export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
-  const departmentSlug = req.nextUrl.searchParams.get("departmentSlug");
+  const departmentSlugRaw = req.nextUrl.searchParams.get("departmentSlug");
+  const departmentSlug = departmentSlugRaw ? departmentSlugRaw.trim().toLowerCase() : null;
   const departmentId = req.nextUrl.searchParams.get("departmentId");
   if (!departmentSlug && !departmentId) {
     return NextResponse.json({ error: { code: "VALIDATION_ERROR", message: "departmentSlug or departmentId required" } }, { status: 400 });
@@ -17,7 +18,7 @@ export async function GET(req: NextRequest) {
     let deptId = departmentId;
     if (departmentSlug) {
       const dep = await db.select().from(departments).where(eq(departments.slug, departmentSlug)).limit(1);
-      if (dep.length === 0) return NextResponse.json({ error: { code: "NOT_FOUND", message: "Department not found" } }, { status: 404 });
+      if (dep.length === 0) return NextResponse.json({ data: [], total: 0, message: "Department not found — no programmes available" }, { status: 200 });
       deptId = dep[0].id;
     }
     const rows = await db.select().from(programmes).where(eq(programmes.departmentId, deptId!)).orderBy(programmes.code);

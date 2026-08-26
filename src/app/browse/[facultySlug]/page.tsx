@@ -52,32 +52,46 @@ export default async function FacultyBrowsePage({ params }: { params: Promise<{ 
         <h1 className="mt-2 text-2xl font-bold tracking-tight">{faculty.code} — {faculty.name}</h1>
         <p className="mt-1 text-sm text-muted-foreground">{schs.length} Schools · {allDepts.length} Departments</p>
 
-        <div className="mt-6 space-y-6">
-          {schs.map((school) => {
-            const deps = allDepts.filter((d) => d.schoolSlug === school.slug);
-            return (
-              <Card key={school.id}>
-                <CardHeader>
-                  <CardTitle className="text-base">{school.name}</CardTitle>
-                  <CardDescription>{deps.length} Departments</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    {deps.map((dept) => (
-                      <Link key={dept.id} href={`/browse/${faculty.slug}/${dept.slug}`} className="group rounded-xl border p-4 hover:border-foreground/20 transition-colors">
-                        <div className="flex items-start justify-between gap-2">
-                          <span className="text-sm font-medium group-hover:underline">{dept.name}</span>
-                          <Badge variant="outline">{progByDept.get(dept.id) || 0} programmes</Badge>
-                        </div>
-                        <p className="mt-1 text-xs text-muted-foreground">View programmes →</p>
-                      </Link>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-            );
-          })}
-        </div>
+        {schs.length === 0 ? (
+          <Card className="mt-6">
+            <CardContent className="py-10 text-center">
+              <p className="text-sm font-medium">No schools found for {faculty.code} yet.</p>
+              <p className="text-sm text-muted-foreground mt-1">Academic data is being updated — check back soon or try search.</p>
+              <Link href="/search" className="mt-4 inline-flex rounded-xl border px-4 py-2 text-sm hover:bg-accent">Search modules</Link>
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="mt-6 space-y-6">
+            {schs.map((school) => {
+              const deps = allDepts.filter((d) => d.schoolSlug === school.slug);
+              return (
+                <Card key={school.id}>
+                  <CardHeader>
+                    <CardTitle className="text-base">{school.name}</CardTitle>
+                    <CardDescription>{deps.length} Departments{deps.length === 0 ? " — no departments yet" : ""}</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    {deps.length === 0 ? (
+                      <p className="text-sm text-muted-foreground py-4 text-center">No departments yet for this school.</p>
+                    ) : (
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        {deps.map((dept) => (
+                          <Link key={dept.id} href={`/browse/${faculty.slug}/${dept.slug}`} className="group rounded-xl border p-4 hover:border-foreground/20 transition-colors">
+                            <div className="flex items-start justify-between gap-2">
+                              <span className="text-sm font-medium group-hover:underline">{dept.name}</span>
+                              <Badge variant="outline">{progByDept.get(dept.id) || 0} programmes</Badge>
+                            </div>
+                            <p className="mt-1 text-xs text-muted-foreground">View programmes →</p>
+                          </Link>
+                        ))}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+        )}
 
         <div className="mt-6 flex gap-3">
           <Link href="/browse" className="text-sm font-medium hover:underline">

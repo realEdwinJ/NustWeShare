@@ -78,10 +78,8 @@ export default async function PaperPage({ params }: { params: Promise<{ id: stri
   const displayNumber = paper.assessmentNumber ? ` ${paper.assessmentNumber}` : "";
   const title = `${moduleData.code} — ${paper.academicYear} Semester ${paper.semester} — ${displayType}${displayNumber}`;
 
-  // Build viewer URL: for local dev via /api/files, for prod via signed R2 — we use download API that redirects, but viewer needs direct PDF bytes
-  // We'll construct a viewer URL that points to /api/files for LocalStorage or signed URL for R2 — for MVP, use /api/files if available, else use download redirect
-  // For now, if canonical exists, viewer URL is `/api/files/${encodeURIComponent(canonical.r2ObjectKey)}` for local, or we can use `/api/papers/${id}/view-file` — simpler to use files API
-  const viewerUrl = canonical ? `/api/files/${encodeURIComponent(canonical.r2ObjectKey)}` : null;
+  // Build viewer URL — encode each segment, not entire key with slashes, to match [...key] route expectation
+  const viewerUrl = canonical ? `/api/files/${canonical.r2ObjectKey.split("/").map((s: string) => encodeURIComponent(s)).join("/")}` : null;
   const downloadUrl = `/api/papers/${paper.id}/download`;
 
   return (

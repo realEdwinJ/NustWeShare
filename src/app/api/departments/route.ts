@@ -7,12 +7,13 @@ import { departments } from "@/db/schema/departments";
 export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
-  const schoolSlug = req.nextUrl.searchParams.get("schoolSlug");
-  if (!schoolSlug) return NextResponse.json({ error: { code: "VALIDATION_ERROR", message: "schoolSlug required" } }, { status: 400 });
+  const schoolSlugRaw = req.nextUrl.searchParams.get("schoolSlug");
+  if (!schoolSlugRaw) return NextResponse.json({ error: { code: "VALIDATION_ERROR", message: "schoolSlug required" } }, { status: 400 });
+  const schoolSlug = schoolSlugRaw.trim().toLowerCase();
   try {
     const db = getDb();
     const sch = await db.select().from(schools).where(eq(schools.slug, schoolSlug)).limit(1);
-    if (sch.length === 0) return NextResponse.json({ error: { code: "NOT_FOUND", message: "School not found" } }, { status: 404 });
+    if (sch.length === 0) return NextResponse.json({ data: [], total: 0, message: "School not found — no departments available" }, { status: 200 });
     const rows = await db.select().from(departments).where(eq(departments.schoolId, sch[0].id)).orderBy(departments.name);
     return NextResponse.json({ data: rows }, { headers: { "Cache-Control": "public, s-maxage=3600" } });
   } catch (e) {

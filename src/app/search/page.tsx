@@ -14,23 +14,23 @@ async function search(q: string) {
     const { programmes } = await import("@/db/schema/programmes");
     const { sql } = await import("drizzle-orm");
     const db = getDb();
-    const like = `%${q}%`;
-    const prefixLike = `${q}%`;
+    const escaped = q.replace(/[%_\\]/g, "\\$&");
+    const like = `%${escaped}%`;
     const mods = await db
       .select()
       .from(modules)
-      .where(sql`${modules.code} ILIKE ${like} OR ${modules.name} ILIKE ${like}`)
+      .where(sql`${modules.code} ILIKE ${like} ESCAPE '\' OR ${modules.name} ILIKE ${like} ESCAPE '\'`)
       .orderBy(modules.code)
       .limit(20);
     const progs = await db
       .select()
       .from(programmes)
-      .where(sql`${programmes.code} ILIKE ${like} OR ${programmes.name} ILIKE ${like}`)
+      .where(sql`${programmes.code} ILIKE ${like} ESCAPE '\' OR ${programmes.name} ILIKE ${like} ESCAPE '\'`)
       .orderBy(programmes.code)
       .limit(10);
     return { modules: mods, programmes: progs };
   } catch (e) {
-    console.error("[search page]", e);
+    console.error("[search page]", (e as any)?.message ?? e);
     return null;
   }
 }

@@ -31,11 +31,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     }
 
     const storage = getStorage();
-    const signedUrl = await storage.getSignedUrl(canonical.r2ObjectKey, 3600);
-
-    // For LocalStorage dev, signedUrl is path to /api/files — we should redirect to it
-    // For R2, it's a presigned S3 URL — redirect to it with clean filename via header? Instead redirect to signedUrl and let browser handle, but we want clean filename.
-    // For R2, we can append response-content-disposition query param if using S3 presigned: but our LocalStorage just returns path, so we can set header via redirect.
+    // Build download filename and construct direct file URL with disposition instead of relying on redirect headers (which browsers ignore)
     const filename = buildDownloadFilename({
       moduleCode: mod[0]?.code ?? "PAPER",
       academicYear: paper.academicYear,
@@ -43,12 +39,14 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       assessmentNumber: paper.assessmentNumber,
     });
 
-    // If storage is Local, we need to serve file via our own endpoint that sets Content-Disposition
-    // For now, redirect to signedUrl and set cookie
-    const res = NextResponse.redirect(signedUrl, 302);
+    // For both R2 and Local, serve via /api/files with disposition query — ensures correct filename without relying on X- headers
+    // Use per-segment encoding
+    const encodedKey = canonical.r2ObjectKey.split("/").map((s: string) => encodeURIComponent(s)).join("/");
+    const fileUrl = `/api/files/${encodedKey}?download=${encodeURIComponent(filename)}`;
+
+    const res = NextResponse.redirect(fileUrl, 302);
     if (!already) res.cookies.set(cookieName, "1", { httpOnly: true, sameSite: "lax", maxAge: 3600, path: "/" });
-    // Set header for clean filename where possible (for direct download via our files API, it will use this)
-    res.headers.set("X-Download-Filename", filename);
+    // Don't use X-Download-Filename — use Location query param instead; files route can respect download param
     return res;
   } catch (e) {
     console.error("[api/papers/[id]/download]", e);

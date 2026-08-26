@@ -12,14 +12,14 @@ async function getLeaderboard() {
     const { users } = await import("@/db/schema/users");
     const { paperFiles } = await import("@/db/schema/paper_files");
     const { papers } = await import("@/db/schema/papers");
-    const { eq, count, desc, sql } = await import("drizzle-orm");
+    const { eq, count, desc, and, isNull } = await import("drizzle-orm");
     const db = getDb();
     const rows = await db
       .select({ userId: paperFiles.uploaderId, username: users.username, displayName: users.displayName, c: count(paperFiles.id) })
       .from(paperFiles)
       .innerJoin(papers, eq(paperFiles.paperId, papers.id))
       .innerJoin(users, eq(paperFiles.uploaderId, users.id))
-      .where(sql`${papers.status} = 'active' AND ${paperFiles.isCanonical} = true`)
+      .where(and(eq(papers.status, "active"), eq(paperFiles.isCanonical, true)))
       .groupBy(paperFiles.uploaderId, users.username, users.displayName)
       .orderBy(desc(count(paperFiles.id)))
       .limit(20);
@@ -28,7 +28,7 @@ async function getLeaderboard() {
       .select({ c: count() })
       .from(paperFiles)
       .innerJoin(papers, eq(paperFiles.paperId, papers.id))
-      .where(sql`${paperFiles.uploaderId} IS NULL AND ${papers.status} = 'active' AND ${paperFiles.isCanonical} = true`);
+      .where(and(isNull(paperFiles.uploaderId), eq(papers.status, "active"), eq(paperFiles.isCanonical, true)));
     const anonCount = Number(anonRes[0]?.c ?? 0);
 
     const ranked = rows.map((r, idx) => ({ rank: idx + 1, username: r.username, displayName: r.displayName, count: Number(r.c) }));

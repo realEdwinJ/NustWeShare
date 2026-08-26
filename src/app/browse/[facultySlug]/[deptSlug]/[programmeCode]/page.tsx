@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 
 export default async function ProgrammeModulesPage({ params }: { params: Promise<{ facultySlug: string; deptSlug: string; programmeCode: string }> }) {
   const { facultySlug, deptSlug, programmeCode } = await params;
-  const code = programmeCode.toUpperCase();
+  const code = programmeCode.trim().toUpperCase();
   try {
     const { getDb } = await import("@/lib/db");
     const { programmes } = await import("@/db/schema/programmes");

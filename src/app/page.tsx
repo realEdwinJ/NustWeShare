@@ -32,18 +32,18 @@ async function getTopContributors() {
     const { users } = await import("@/db/schema/users");
     const { paperFiles } = await import("@/db/schema/paper_files");
     const { papers } = await import("@/db/schema/papers");
-    const { eq, count, desc, sql } = await import("drizzle-orm");
+    const { eq, count, desc, and, isNull } = await import("drizzle-orm");
     const db = getDb();
     const rows = await db
       .select({ username: users.username, displayName: users.displayName, c: count(paperFiles.id) })
       .from(paperFiles)
       .innerJoin(papers, eq(paperFiles.paperId, papers.id))
       .innerJoin(users, eq(paperFiles.uploaderId, users.id))
-      .where(sql`${papers.status} = 'active' AND ${paperFiles.isCanonical} = true`)
+      .where(and(eq(papers.status, "active"), eq(paperFiles.isCanonical, true)))
       .groupBy(users.username, users.displayName)
       .orderBy(desc(count(paperFiles.id)))
       .limit(3);
-    const anonRes = await db.select({ c: count() }).from(paperFiles).innerJoin(papers, eq(paperFiles.paperId, papers.id)).where(sql`${paperFiles.uploaderId} IS NULL AND ${papers.status} = 'active' AND ${paperFiles.isCanonical} = true`);
+    const anonRes = await db.select({ c: count() }).from(paperFiles).innerJoin(papers, eq(paperFiles.paperId, papers.id)).where(and(isNull(paperFiles.uploaderId), eq(papers.status, "active"), eq(paperFiles.isCanonical, true)));
     const anonCount = Number(anonRes[0]?.c ?? 0);
     // Merge anonymous if needed
     const list = rows.map((r) => ({ name: r.displayName || r.username, count: Number(r.c) }));

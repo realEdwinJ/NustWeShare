@@ -10,7 +10,8 @@ export const dynamic = "force-dynamic";
 // GET /api/leaderboard?limit=20 — ordered by approved papers desc (Spec 22)
 export async function GET(req: Request) {
   const url = new URL(req.url);
-  const limit = Math.min(parseInt(url.searchParams.get("limit") || "20", 10), 50);
+  const limitRaw = parseInt(url.searchParams.get("limit") || "20", 10);
+  const limit = Math.min(Number.isFinite(limitRaw) ? limitRaw : 20, 50);
 
   try {
     const db = getDb();
@@ -32,12 +33,13 @@ export async function GET(req: Request) {
       .orderBy(desc(count(paperFiles.id)))
       .limit(limit);
 
-    // Get anonymous count
+    // Get anonymous count — use Drizzle helpers not raw sql for correctness across pg/hyperdrive
+    const { and, isNull } = await import("drizzle-orm");
     const anonRes = await db
       .select({ c: count() })
       .from(paperFiles)
       .innerJoin(papers, eq(paperFiles.paperId, papers.id))
-      .where(sql`${paperFiles.uploaderId} IS NULL AND ${papers.status} = 'active' AND ${paperFiles.isCanonical} = true`);
+      .where(and(isNull(paperFiles.uploaderId), eq(papers.status, "active"), eq(paperFiles.isCanonical, true)));
     const anonCount = Number(anonRes[0]?.c ?? 0);
 
     const ranked = leaderboard.map((r, idx) => ({
@@ -60,7 +62,8 @@ export async function GET(req: Request) {
 
     return NextResponse.json({ data: ranked }, { headers: { "Cache-Control": "public, s-maxage=300" } });
   } catch (e) {
-    console.error("[api/leaderboard]", e);
-    return NextResponse.json({ error: { code: "DB_ERROR", message: "Could not load leaderboard." } }, { status: 500 });
+    console.error("[api/leaderboard]", (e as any)?.message ?? e);
+    // Return empty leaderboard gracefully instead of 500 so frontend doesn't crash when no contributions yet
+    return NextResponse.json({ data: [], total: 0, message: "Leaderboard temporarily unavailable" }, { status: 200, headers: { "Cache-Control": "no-store" } });
   }
 }

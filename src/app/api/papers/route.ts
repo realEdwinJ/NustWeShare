@@ -9,11 +9,21 @@ export const dynamic = "force-dynamic";
 export async function GET(req: NextRequest) {
   const moduleId = req.nextUrl.searchParams.get("moduleId");
   const moduleCode = req.nextUrl.searchParams.get("moduleCode");
-  const year = req.nextUrl.searchParams.get("year");
-  const type = req.nextUrl.searchParams.get("type");
-  const limit = Math.min(parseInt(req.nextUrl.searchParams.get("limit") || "50", 10), 100);
-  const page = Math.max(parseInt(req.nextUrl.searchParams.get("page") || "1", 10), 1);
+  const yearRaw = req.nextUrl.searchParams.get("year");
+  const typeRaw = req.nextUrl.searchParams.get("type");
+  // Robust limit/page parsing: NaN → defaults, clamp
+  const limitRaw = parseInt(req.nextUrl.searchParams.get("limit") || "50", 10);
+  const pageRaw = parseInt(req.nextUrl.searchParams.get("page") || "1", 10);
+  const limit = Math.min(Number.isFinite(limitRaw) ? limitRaw : 50, 100);
+  const page = Math.max(Number.isFinite(pageRaw) ? pageRaw : 1, 1);
   const offset = (page - 1) * limit;
+  // Validate type enum
+  const allowedTypes = new Set(["TEST","EXAM","SUPPLEMENTARY","QUIZ","ASSIGNMENT","LAB","TUTORIAL"]);
+  const type = typeRaw && allowedTypes.has(typeRaw.toUpperCase()) ? typeRaw.toUpperCase() : null;
+  const year = yearRaw ? parseInt(yearRaw, 10) : null;
+  if (yearRaw && (!Number.isFinite(year as number) || (year as number) < 2000 || (year as number) > 2035)) {
+    return NextResponse.json({ data: [], total: 0, page, limit });
+  }
 
   try {
     const db = getDb();
@@ -26,7 +36,7 @@ export async function GET(req: NextRequest) {
 
     const conditions: any[] = [eq(papers.status, "active")];
     if (moduleFilterId) conditions.push(eq(papers.moduleId, moduleFilterId));
-    if (year) conditions.push(eq(papers.academicYear, parseInt(year, 10)));
+    if (year !== null && Number.isFinite(year)) conditions.push(eq(papers.academicYear, year as number));
     if (type) conditions.push(eq(papers.assessmentType, type as any));
 
     const where = conditions.length === 1 ? conditions[0] : and(...conditions);

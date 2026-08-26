@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-export function middleware(req: NextRequest) {
+export default function proxy(req: NextRequest) {
   // CSRF check for state-changing POST to /api (Spec 51) — verify Origin is same-site if present
   if (req.method === "POST" && req.nextUrl.pathname.startsWith("/api/")) {
     const origin = req.headers.get("origin");
@@ -21,24 +21,45 @@ export function middleware(req: NextRequest) {
     "Content-Security-Policy",
     [
       "default-src 'self'",
-      "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+      // unsafe-eval removed; pdfjs worker loaded via blob: or CDN should use workerSrc without eval
+      "script-src 'self' 'unsafe-inline'",
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data: blob:",
       "font-src 'self' data:",
-      "connect-src 'self'",
+      "connect-src 'self' https://cdnjs.cloudflare.com",
       "object-src 'none'",
       "base-uri 'self'",
       "form-action 'self'",
       "frame-ancestors 'none'",
+      "worker-src 'self' blob:",
     ].join("; ")
   );
 
   // For API routes, ensure we don't cache sensitive responses
+  // IMPORTANT: only no-store for mutating / private endpoints, not for public GET listings (papers, modules, search, faculties)
+  // Previous bug: /api/papers (GET public) was forced no-store, conflicting with handler's public s-maxage
   if (req.nextUrl.pathname.startsWith("/api/")) {
-    // Add rate limit headers if present from route handlers (they set Retry-After)
-    // Don't cache auth/report/upload
-    if (["/api/auth", "/api/papers/upload", "/api/papers"].some((p) => req.nextUrl.pathname.startsWith(p))) {
+    const isPrivate =
+      req.nextUrl.pathname.startsWith("/api/auth") ||
+      req.nextUrl.pathname.startsWith("/api/papers/upload") ||
+      req.nextUrl.pathname.startsWith("/api/papers/") && req.nextUrl.pathname.includes("/report") ||
+      req.nextUrl.pathname.startsWith("/api/dashboard") ||
+      req.nextUrl.pathname === "/api/diag" ||
+      req.nextUrl.pathname === "/api/health";
+    const isPublicGet = req.method === "GET" && [
+      "/api/papers",
+      "/api/modules",
+      "/api/faculties",
+      "/api/schools",
+      "/api/departments",
+      "/api/programmes",
+      "/api/search",
+      "/api/leaderboard",
+    ].some((p) => req.nextUrl.pathname === p || req.nextUrl.pathname.startsWith(p + "/"));
+    if (isPrivate) {
       res.headers.set("Cache-Control", "no-store");
+    } else if (isPublicGet) {
+      // Let route handler control cache; don't override
     }
   }
 

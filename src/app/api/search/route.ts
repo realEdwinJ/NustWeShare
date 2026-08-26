@@ -24,16 +24,17 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: { code: "VALIDATION_ERROR", message: "Query too long" } }, { status: 400 });
   }
 
+  // Sanitize ILIKE pattern: escape % _ \ to prevent wildcard injection
+  const escaped = q.replace(/[%_\\]/g, "\\$&");
+  const like = `%${escaped}%`;
+
   try {
     const db = getDb();
-    const like = `%${q}%`;
-    const prefixLike = `${q}%`;
     // Modules search with ranking (Spec 37: partial matches ELC, Electronic, 511S)
-    // Use ILIKE and order by relevance: exact code > prefix > contains > name
     const modRows = await db
       .select()
       .from(modules)
-      .where(sql`${modules.code} ILIKE ${like} OR ${modules.name} ILIKE ${like}`)
+      .where(sql`${modules.code} ILIKE ${like} ESCAPE '\' OR ${modules.name} ILIKE ${like} ESCAPE '\'`)
       .orderBy(modules.code)
       .limit(20);
 
@@ -41,7 +42,7 @@ export async function GET(req: NextRequest) {
     const progRows = await db
       .select()
       .from(programmes)
-      .where(sql`${programmes.code} ILIKE ${like} OR ${programmes.name} ILIKE ${like}`)
+      .where(sql`${programmes.code} ILIKE ${like} ESCAPE '\' OR ${programmes.name} ILIKE ${like} ESCAPE '\'`)
       .orderBy(programmes.code)
       .limit(10);
 
@@ -50,8 +51,8 @@ export async function GET(req: NextRequest) {
       { headers: { "Cache-Control": "public, s-maxage=60" } }
     );
   } catch (e: any) {
-    console.error("[api/search]", e, e?.cause);
-    const cause = e?.cause ? ` | cause: ${(e.cause as any)?.message?.slice(0, 300) || String(e.cause).slice(0, 300)}` : "";
-    return NextResponse.json({ error: { code: "DB_ERROR", message: "Search unavailable.", detail: (e?.message?.slice(0, 300) || String(e).slice(0, 300)) + cause } }, { status: 500 });
+    console.error("[api/search]", e?.message ?? e);
+    // Never leak internal DB details to client (Spec 62)
+    return NextResponse.json({ error: { code: "DB_ERROR", message: "Search unavailable. Please try again." } }, { status: 500 });
   }
 }

@@ -59,14 +59,16 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     if (pap.length === 0) return NextResponse.json({ error: { code: "NOT_FOUND", message: "Paper not found." } }, { status: 404 });
     if (pap[0].status === "deleted") return NextResponse.json({ error: { code: "PAPER_DELETED", message: "This paper is no longer available." } }, { status: 410 });
 
-    // Check duplicate report from same reporter (Spec 34: one person cannot generate 5 reports via unique indexes, but we check friendly error first)
+    // Check duplicate report from same reporter (Spec 34) — use DB-level filter, not in-memory
+    const { and } = await import("drizzle-orm");
     if (reporterId) {
-      const existing = await db.select().from(reports).where(eq(reports.paperId, id)).then((rows) => rows.filter((r) => r.reporterId === reporterId));
+      const { eq: eq2 } = await import("drizzle-orm");
+      const existing = await db.select().from(reports).where(and(eq(reports.paperId, id), eq(reports.reporterId, reporterId))).limit(1);
       if (existing.length > 0) {
         return NextResponse.json({ error: { code: "ALREADY_REPORTED", message: "You've already reported this paper." } }, { status: 409 });
       }
     } else {
-      const existing = await db.select().from(reports).where(eq(reports.paperId, id)).then((rows) => rows.filter((r) => r.reporterIpHash === ipHash));
+      const existing = await db.select().from(reports).where(and(eq(reports.paperId, id), eq(reports.reporterIpHash, ipHash))).limit(1);
       if (existing.length > 0) {
         return NextResponse.json({ error: { code: "ALREADY_REPORTED", message: "You've already reported this paper." } }, { status: 409 });
       }
@@ -76,7 +78,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     try {
       await db.insert(reports).values({ paperId: id, reason: reason as any, details, reporterId, reporterIpHash: ipHash });
     } catch (e: any) {
-      if (String(e.message).includes("uq_reports")) {
+      const msg = String(e.message || "") + String((e as any)?.cause?.message || "");
+      if (msg.includes("uq_reports") || msg.includes("unique") || msg.includes("duplicate key")) {
         return NextResponse.json({ error: { code: "ALREADY_REPORTED", message: "You've already reported this paper." } }, { status: 409 });
       }
       throw e;

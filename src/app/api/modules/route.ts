@@ -8,10 +8,12 @@ import { programmeModules } from "@/db/schema/programme_modules";
 export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
-  const programmeCode = req.nextUrl.searchParams.get("programmeCode");
+  const programmeCodeRaw = req.nextUrl.searchParams.get("programmeCode");
+  const programmeCode = programmeCodeRaw ? programmeCodeRaw.trim().toUpperCase() : null;
   const departmentSlug = req.nextUrl.searchParams.get("departmentSlug");
   const q = req.nextUrl.searchParams.get("q");
-  const limit = Math.min(parseInt(req.nextUrl.searchParams.get("limit") || "50", 10), 100);
+  const limitRaw = parseInt(req.nextUrl.searchParams.get("limit") || "50", 10);
+  const limit = Math.min(Number.isFinite(limitRaw) ? limitRaw : 50, 100);
 
   try {
     const db = getDb();
@@ -34,13 +36,16 @@ export async function GET(req: NextRequest) {
 
     // Fallback: list modules with optional search q (used for upload selector)
     if (q) {
-      const like = `%${q}%`;
-      // Use ILIKE for partial (Spec 37) — Drizzle ilike via sql
+      const trimmed = q.trim();
+      if (trimmed.length < 1) return NextResponse.json({ data: [] });
+      if (trimmed.length > 100) return NextResponse.json({ error: { code: "VALIDATION_ERROR", message: "Query too long" } }, { status: 400 });
+      const escaped = trimmed.replace(/[%_\\]/g, "\\$&");
+      const like = `%${escaped}%`;
       const { sql } = await import("drizzle-orm");
       const rows = await db
         .select()
         .from(modules)
-        .where(sql`${modules.code} ILIKE ${like} OR ${modules.name} ILIKE ${like}`)
+        .where(sql`${modules.code} ILIKE ${like} ESCAPE '\' OR ${modules.name} ILIKE ${like} ESCAPE '\'`)
         .orderBy(modules.code)
         .limit(20);
       return NextResponse.json({ data: rows });
@@ -50,7 +55,7 @@ export async function GET(req: NextRequest) {
     const rows = await db.select().from(modules).orderBy(modules.code).limit(limit);
     return NextResponse.json({ data: rows });
   } catch (e) {
-    console.error("[api/modules]", e);
+    console.error("[api/modules]", (e as any)?.message ?? e);
     return NextResponse.json({ error: { code: "DB_ERROR", message: "Could not load modules." } }, { status: 500 });
   }
 }

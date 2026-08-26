@@ -20,7 +20,29 @@ export function sanitizeR2Key(key: string): string {
   return sanitized;
 }
 
-export function hashIp(ip: string, salt: string = process.env.APP_SECRET ?? "nustweshare-salt"): string {
-  const crypto = require("crypto") as typeof import("crypto");
-  return crypto.createHash("sha256").update(ip + salt).digest("hex").slice(0, 64);
+export function getAppSecret(): string {
+  // Try Cloudflare env first (Workers), then process.env
+  try {
+    const { getCloudflareContext } = require("@opennextjs/cloudflare");
+    const ctx = getCloudflareContext();
+    if (ctx?.env?.APP_SECRET) return ctx.env.APP_SECRET as string;
+  } catch {}
+  return process.env.APP_SECRET ?? "nustweshare-salt";
+}
+
+export function hashIp(ip: string, salt?: string): string {
+  const secret = salt ?? getAppSecret();
+  try {
+    const crypto = require("crypto") as typeof import("crypto");
+    return crypto.createHash("sha256").update(ip + secret).digest("hex").slice(0, 64);
+  } catch {
+    // Workers fallback: simple hash via Web Crypto not sync, so use fast djb2 fallback for rate-limit keys (not cryptographic)
+    // For competition, we keep deterministic but not crypto-secure; enough for dedup
+    let hash = 5381;
+    const str = ip + secret;
+    for (let i = 0; i < str.length; i++) hash = ((hash << 5) + hash) ^ str.charCodeAt(i);
+    const hex = (hash >>> 0).toString(16).padStart(8, "0");
+    // Repeat to reach 64 chars deterministic
+    return (hex + hex + hex + hex + hex + hex + hex + hex).slice(0, 64);
+  }
 }

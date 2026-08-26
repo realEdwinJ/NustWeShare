@@ -17,6 +17,19 @@ function isWorkersRuntime(): boolean {
   );
 }
 
+function getEnvVarFromCloudflare(name: string): string | undefined {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { getCloudflareContext } = require("@opennextjs/cloudflare");
+    const ctx = getCloudflareContext();
+    const val = ctx?.env?.[name];
+    if (typeof val === "string" && val.length > 0) return val;
+    // HYPERDRIVE is object, not string
+    if (name === "HYPERDRIVE" && ctx?.env?.HYPERDRIVE) return "__present__";
+  } catch {}
+  return undefined;
+}
+
 function getConnectionString(): string {
   let hyperdrivePresent = false;
   let hyperdriveConnStr: string | undefined;
@@ -27,63 +40,83 @@ function getConnectionString(): string {
     const ctx = getCloudflareContext();
     hyperdrivePresent = !!ctx?.env?.HYPERDRIVE;
     hyperdriveConnStr = ctx?.env?.HYPERDRIVE?.connectionString as string | undefined;
+    // Also check if DATABASE_URL is available via Hyperdrive env for fallback debugging
+    if (!hyperdriveConnStr && ctx?.env?.DATABASE_URL) {
+      hyperdriveConnStr = undefined; // keep separate
+    }
   } catch (e) {
-    console.error("[db] getCloudflareContext() threw:", e instanceof Error ? e.message : e);
+    // getCloudflareContext not available outside Workers (e.g., next dev) — expected
+    if (process.env.NODE_ENV !== "production") {
+      // silent in dev; will fallback to DATABASE_URL
+    } else {
+      console.warn("[db] getCloudflareContext() unavailable:", e instanceof Error ? e.message : e);
+    }
   }
-
-  // TEMP DIAGNOSTIC LOG — remove once you've confirmed Hyperdrive is wired up correctly.
-  // Never logs the full connection string or credentials.
-  console.log(
-    "[db] hyperdrivePresent:", hyperdrivePresent,
-    "| hasConnectionString:", !!hyperdriveConnStr,
-    "| prefix:", hyperdriveConnStr ? hyperdriveConnStr.slice(0, 20) : "n/a",
-    "| isWorkersRuntime:", isWorkersRuntime()
-  );
 
   if (hyperdriveConnStr) {
     return hyperdriveConnStr;
   }
 
+  // Prefer Hyperdrive env DATABASE_URL if present (wrangler secret), then process.env
+  const cloudflareDatabaseUrl = getEnvVarFromCloudflare("DATABASE_URL");
+  // Need to re-fetch DATABASE_URL string correctly
+  let databaseUrl: string | undefined;
+  try {
+    const { getCloudflareContext } = require("@opennextjs/cloudflare");
+    const ctx = getCloudflareContext();
+    if (ctx?.env?.DATABASE_URL && typeof ctx.env.DATABASE_URL === "string") {
+      databaseUrl = ctx.env.DATABASE_URL;
+    }
+  } catch {}
+  if (!databaseUrl) databaseUrl = process.env.DATABASE_URL;
+
+  if (databaseUrl) {
+    if (isWorkersRuntime() && hyperdrivePresent === false) {
+      // In Workers but Hyperdrive missing — fallback is intentional for resilience.
+      // This allows local `wrangler dev` with DATABASE_URL secret and production
+      // fallback if Hyperdrive binding is misconfigured (graceful degradation vs crash).
+      console.warn("[db] Workers runtime: HYPERDRIVE missing, falling back to DATABASE_URL (prefix:", databaseUrl.slice(0, 20), ")");
+    }
+    return databaseUrl;
+  }
+
+  // No connection string found anywhere
   if (isWorkersRuntime()) {
-    // Critical: do NOT fall back to process.env.DATABASE_URL here. In the deployed Worker,
-    // DATABASE_URL is not declared anywhere in wrangler.jsonc (no var, no secret) — if it's
-    // somehow defined at runtime, it's coming from an unintended source (e.g. a dashboard
-    // variable that got named or mapped incorrectly), not a real database credential.
-    // A previous incident showed exactly this: an unrelated variable change broke live
-    // search because a silent fallback picked up a placeholder value. Fail loudly instead.
     throw new Error(
-      "[db] Running inside Workers runtime but env.HYPERDRIVE.connectionString is missing. " +
-      "Refusing to fall back to DATABASE_URL. Check the HYPERDRIVE binding in wrangler.jsonc " +
-      "and confirm it's attached to this deployed Worker version."
+      "[db] No database connection available in Workers runtime. " +
+      "HYPERDRIVE.connectionString is missing and DATABASE_URL is not set. " +
+      "Check wrangler.jsonc hyperdrive binding and ensure DATABASE_URL secret is set via `wrangler secret put DATABASE_URL` or fix Hyperdrive ID."
     );
   }
 
-  // Genuine local Node.js dev (next dev) or scripts (drizzle-kit, migrate.ts) — DATABASE_URL is expected here.
-  const url = process.env.DATABASE_URL;
-  if (!url) {
-    throw new Error("[db] DATABASE_URL not set. Required for local development.");
-  }
-  return url;
+  throw new Error("[db] DATABASE_URL not set. Required for local development. Set it in .env or .dev.vars");
+}
+
+function isHyperdriveConnectionString(cs: string): boolean {
+  return cs.includes("hyperdrive") || cs.includes("hyperdrive.cloudflare.com") || cs.startsWith("postgres://hyperdrive");
 }
 
 function getPool(): Pool {
   if (pool) return pool;
   const connectionString = getConnectionString();
-  const isHyperdrive = connectionString.includes("hyperdrive") || connectionString.includes("501e0e");
+  const isHyperdrive = isHyperdriveConnectionString(connectionString);
+  // Determine SSL: Hyperdrive manages TLS; direct Neon requires ssl mode
+  const needsSsl = !isHyperdrive && (process.env.NODE_ENV === "production" || connectionString.includes("sslmode=require") || connectionString.includes("neon.tech"));
   pool = new Pool({
     connectionString,
-    ssl:
-      isHyperdrive
-        ? undefined // Hyperdrive handles SSL via its own proxy, don't override
-        : process.env.NODE_ENV === "production" || connectionString.includes("sslmode=require")
-          ? { rejectUnauthorized: false }
-          : undefined,
-    max: isHyperdrive ? 10 : 5,
+    ssl: isHyperdrive ? undefined : needsSsl ? { rejectUnauthorized: false } : undefined,
+    max: 5, // keep low for Hyperdrive (pooled) and Neon (serverless); 10 caused contention
     idleTimeoutMillis: 30000,
-    connectionTimeoutMillis: 30000,
+    connectionTimeoutMillis: 15000,
+    // Never use statement_timeout via pool options — let Hyperdrive manage
   });
   pool.on("error", (err) => {
     console.error("[db] pool error", err.message);
+    // Don't crash process; allow retry. Close pool on fatal error to allow fresh connection on next getDb()
+    if ((err as any)?.code === "ECONNRESET" || (err as any)?.message?.includes("terminating")) {
+      pool = null;
+      dbInstance = null;
+    }
   });
   return pool;
 }

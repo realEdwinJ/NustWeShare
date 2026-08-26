@@ -30,8 +30,8 @@ export class LocalStorage implements Storage {
     } catch {}
   }
   async getSignedUrl(key: string): Promise<string> {
-    // For local dev, return local path — in production with R2 binding this is handled via /api/files which reads from PAPERS_BUCKET
-    return `/api/files/${encodeURIComponent(key)}`;
+    // For local dev, return per-segment encoded path (matches [...key] route)
+    return `/api/files/${key.split("/").map((s) => encodeURIComponent(s)).join("/")}`;
   }
 }
 
@@ -60,8 +60,8 @@ export class R2NativeStorage implements Storage {
 
   async getSignedUrl(key: string): Promise<string> {
     // For native R2, we don't generate S3 presigned URL — instead return /api/files which will stream via binding
-    // This keeps Worker without credentials and uses R2 binding directly
-    return `/api/files/${encodeURIComponent(key)}`;
+    // This keeps Worker without credentials and uses R2 binding directly; per-segment encode to avoid %2F issues
+    return `/api/files/${key.split("/").map((s) => encodeURIComponent(s)).join("/")}`;
   }
 }
 

@@ -7,13 +7,14 @@ import { schools } from "@/db/schema/schools";
 export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
-  const facultySlug = req.nextUrl.searchParams.get("facultySlug");
-  if (!facultySlug) return NextResponse.json({ error: { code: "VALIDATION_ERROR", message: "facultySlug required" } }, { status: 400 });
+  const facultySlugRaw = req.nextUrl.searchParams.get("facultySlug");
+  if (!facultySlugRaw) return NextResponse.json({ error: { code: "VALIDATION_ERROR", message: "facultySlug required" } }, { status: 400 });
+  const facultySlug = facultySlugRaw.trim().toLowerCase();
   try {
     const db = getDb();
-    // Find faculty by slug to get id, then filter schools
+    // Find faculty by slug (case-insensitive) to get id, then filter schools
     const fac = await db.select().from(faculties).where(eq(faculties.slug, facultySlug)).limit(1);
-    if (fac.length === 0) return NextResponse.json({ error: { code: "NOT_FOUND", message: "Faculty not found" } }, { status: 404 });
+    if (fac.length === 0) return NextResponse.json({ data: [], total: 0, message: "Faculty not found — no schools available" }, { status: 200 });
     const rows = await db.select().from(schools).where(eq(schools.facultyId, fac[0].id)).orderBy(schools.name);
     return NextResponse.json({ data: rows }, { headers: { "Cache-Control": "public, s-maxage=3600" } });
   } catch (e) {
