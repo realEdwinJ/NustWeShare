@@ -13,7 +13,7 @@ export function RelTime({ date, prefix = "" }: { date: Date | string | number; p
   }, [date]);
   const d = new Date(date);
   return (
-    <time dateTime={d.toISOString()} title={formatDate(d, { dateStyle: "medium", timeStyle: "short" } as Intl.DateTimeFormatOptions)} suppressHydrationWarning>
+    <time dateTime={d.toISOString()} title={d.toLocaleString("en-GB", { timeZone: "Africa/Windhoek", dateStyle: "medium", timeStyle: "short" })} suppressHydrationWarning>
       {prefix}
       {rel ?? formatDate(d)}
     </time>

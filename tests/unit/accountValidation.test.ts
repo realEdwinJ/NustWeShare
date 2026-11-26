@@ -27,3 +27,11 @@ describe("paper formatting", () => {
     expect(formatBytes(2_500_000)).toBe("2.4 MB");
   });
 });
+
+import { formatDate as fmtDate } from "@/lib/papers/format";
+describe("date formatting", () => {
+  it("formats in Namibian time without throwing", () => {
+    expect(fmtDate("2026-01-31T23:30:00Z")).toBe("1 Feb 2026"); // UTC+2
+    expect(() => new Date().toLocaleString("en-GB", { timeZone: "Africa/Windhoek", dateStyle: "medium", timeStyle: "short" })).not.toThrow();
+  });
+});
