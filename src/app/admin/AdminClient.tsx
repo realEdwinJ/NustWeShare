@@ -12,11 +12,13 @@ import { assessmentLabel, timeAgo } from "@/lib/papers/format";
 type Backup = { fileId: string; paperId: string; moduleCode: string; academicYear: number; semester: number; assessmentType: string; assessmentNumber: number | null; fileSize: number; pageCount: number | null; originalFilename: string; uploadedAt: string; uploader: string | null };
 type Row = { paperId: string; status: string; moduleCode: string; academicYear: number; semester: number; assessmentType: string; assessmentNumber: number | null; reportCount: number; reasons: string[]; lastReportAt: string };
 
-export function AdminClient() {
+export function AdminClient({ lastScan }: { lastScan: { checked: number; hidden: number; checkedAt: string; by?: string } | null }) {
   const [rows, setRows] = useState<Row[] | null>(null);
   const [filter, setFilter] = useState<"open" | "removed" | "backups">("open");
   const [backups, setBackups] = useState<Backup[] | null>(null);
-  const [scanResult, setScanResult] = useState<string | null>(null);
+  const describe = (r: { checked: number; hidden: number; checkedAt: string; by?: string }) =>
+    `Last storage check ${timeAgo(r.checkedAt)}${r.by ? ` by @${r.by}` : ""}: ${r.checked} files checked, ${r.hidden ? `${r.hidden} paper(s) hidden for missing files` : "all present"}.`;
+  const [scanResult, setScanResult] = useState<string | null>(lastScan ? describe(lastScan) : "Storage hasn't been checked yet.");
   useEffect(() => {
     if (filter !== "backups" || backups) return;
     fetch("/api/admin/backups").then((r) => r.json()).then((j: any) => setBackups(j.data ?? [])).catch(() => setBackups([]));
@@ -47,7 +49,7 @@ export function AdminClient() {
       const j = (await r.json()) as any;
       if (!r.ok) throw new Error(j.error?.message);
       const summary = j.data.hidden ? `${j.data.hidden} paper(s) had missing files and were hidden until re-uploaded.` : "Every file is present in storage.";
-      setScanResult(`Last check ${new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}: ${j.data.checked} files checked. ${summary}`);
+      setScanResult(describe(j.data));
       toast({ tone: j.data.hidden ? "info" : "success", title: `Checked ${j.data.checked} files`, description: summary });
     } catch (e: any) {
       toast({ tone: "error", title: e?.message || "Scan failed" });
@@ -87,6 +89,9 @@ export function AdminClient() {
                     </p>
                   </div>
                   <div className="flex gap-2">
+                    <a href={`/api/admin/files/${b.fileId}`} target="_blank" rel="noopener noreferrer" className="inline-flex h-8 items-center gap-1.5 rounded-lg border bg-surface px-3 text-[13px] font-medium hover:bg-accent">
+                      Preview
+                    </a>
                     <Button size="sm" variant="outline" onClick={() => actBackup(b.fileId, "promote")}><Check /> Make main file</Button>
                     <Button size="sm" variant="destructive" onClick={() => actBackup(b.fileId, "delete")}><Trash2 /> Delete</Button>
                   </div>

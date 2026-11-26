@@ -3,6 +3,7 @@ import { and, eq } from "drizzle-orm";
 import { getDb } from "@/lib/db";
 import { papers } from "@/db/schema/papers";
 import { paperFiles } from "@/db/schema/paper_files";
+import { systemState } from "@/db/schema/system_state";
 import { getUserFromRequest } from "@/lib/auth/current";
 import { handleMissingFile, storedFileExists } from "@/lib/papers/moderation";
 import { jsonError } from "@/lib/http";
@@ -33,5 +34,11 @@ export async function POST(req: NextRequest) {
       if (!ok && (await handleMissingFile(r.paperId))) hidden.push(r.paperId);
     }
   }
-  return NextResponse.json({ data: { checked, hidden: hidden.length, hiddenIds: hidden } }, { headers: { "Cache-Control": "no-store" } });
+  const result = { checked, hidden: hidden.length, hiddenIds: hidden, checkedAt: new Date().toISOString(), by: user.username };
+  await db
+    .insert(systemState)
+    .values({ key: "integrity_scan", value: result })
+    .onConflictDoUpdate({ target: systemState.key, set: { value: result, updatedAt: new Date() } })
+    .catch(() => {});
+  return NextResponse.json({ data: result }, { headers: { "Cache-Control": "no-store" } });
 }

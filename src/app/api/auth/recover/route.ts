@@ -8,6 +8,7 @@ import { createSessionToken, sessionCookieOptions, SESSION_COOKIE } from "@/lib/
 import { rateLimitShared } from "@/lib/security/rateLimit";
 import { hashIp } from "@/lib/security/sanitize";
 import { getClientIp, jsonError, readJson } from "@/lib/http";
+import { KNOWN_DEVICE_COOKIE, addKnownDevice, knownDeviceCookieOptions } from "@/lib/auth/knownDevice";
 import { weakPinReason } from "@/lib/account/validation";
 
 export const dynamic = "force-dynamic";
@@ -53,5 +54,6 @@ export async function POST(req: NextRequest) {
   const { getEnv } = await import("@/lib/env");
   const res = NextResponse.json({ data: { displayName: user.displayName, recoveryCode: nextCode } }, { headers: { "Cache-Control": "no-store" } });
   res.cookies.set(SESSION_COOKIE, createSessionToken(user.id, getEnv().APP_SECRET, u.v), sessionCookieOptions());
+  res.cookies.set(KNOWN_DEVICE_COOKIE, addKnownDevice(req.cookies.get(KNOWN_DEVICE_COOKIE)?.value, user.id, getEnv().APP_SECRET), knownDeviceCookieOptions);
   return res;
 }

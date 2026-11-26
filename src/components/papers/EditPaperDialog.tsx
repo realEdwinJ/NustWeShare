@@ -50,6 +50,13 @@ export function EditPaperDialog({ paper, compact, open: openProp, onOpenChange, 
     const res = await fetch(`/api/papers/${paper.id}`, { method: "DELETE" });
     setBusy(false);
     if (!res.ok) return setErr("Couldn't remove the paper.");
+    const j = (await res.json().catch(() => ({}))) as any;
+    if (j?.data?.outcome === "promoted") {
+      toast({ tone: "success", title: "Your file was removed", description: "Another student's copy now serves this paper, so it stays available." });
+      setOpen(false);
+      router.refresh();
+      return;
+    }
     toast({ tone: "success", title: "Paper removed" });
     router.push(`/modules/${paper.moduleCode.toLowerCase()}`);
     router.refresh();
@@ -70,7 +77,7 @@ export function EditPaperDialog({ paper, compact, open: openProp, onOpenChange, 
         footer={
           confirmDelete ? (
             <>
-              <span className="mr-auto self-center text-sm text-destructive">Remove this paper for everyone?</span>
+              <span className="mr-auto self-center text-sm text-destructive">Remove your file? If others uploaded copies, one takes over.</span>
               <Button variant="ghost" onClick={() => setConfirmDelete(false)}>Keep</Button>
               <Button variant="destructive" onClick={remove} loading={busy}>Remove</Button>
             </>

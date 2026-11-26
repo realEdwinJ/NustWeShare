@@ -14,6 +14,7 @@ export function Dialog({
   footer,
   size = "md",
   className,
+  dismissible = true,
 }: {
   open: boolean;
   onClose: () => void;
@@ -23,6 +24,8 @@ export function Dialog({
   footer?: React.ReactNode;
   size?: "sm" | "md" | "lg" | "xl";
   className?: string;
+  /** When false: no close button, Esc and backdrop clicks are ignored (user must use the footer actions). */
+  dismissible?: boolean;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   useEffect(() => {
@@ -39,10 +42,10 @@ export function Dialog({
       onClose={onClose}
       onCancel={(e) => {
         e.preventDefault();
-        onClose();
+        if (dismissible) onClose();
       }}
       onClick={(e) => {
-        if (e.target === ref.current) onClose(); // backdrop click
+        if (dismissible && e.target === ref.current) onClose(); // backdrop click
       }}
       className={cn(
         "m-auto w-[calc(100%-2rem)] rounded-2xl border bg-card p-0 text-card-foreground shadow-[var(--shadow-pop)] backdrop:bg-transparent",
@@ -60,6 +63,7 @@ export function Dialog({
               </h2>
               {description && <p className="mt-1 text-sm text-muted-foreground">{description}</p>}
             </div>
+            {dismissible && (
             <button
               type="button"
               onClick={onClose}
@@ -68,6 +72,7 @@ export function Dialog({
             >
               <X className="size-4" />
             </button>
+            )}
           </div>
           <div className="overflow-y-auto px-5 py-4">{children}</div>
           {footer && <div className="flex flex-wrap justify-end gap-2 border-t px-5 py-3.5">{footer}</div>}

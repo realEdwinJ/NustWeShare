@@ -80,3 +80,26 @@ export async function handleMissingFile(paperId: string): Promise<boolean> {
   console.warn("[integrity] paper hidden, file missing", { paperId });
   return true;
 }
+
+/**
+ * The uploader of a paper's main file withdraws it. Other students' backup copies are preserved: the best
+ * remaining healthy backup becomes the main file. The paper is removed only if no usable backup exists.
+ * Returns "promoted" or "removed".
+ */
+export async function withdrawMainFile(paperId: string): Promise<"promoted" | "removed"> {
+  const db = getDb();
+  const files = await db.select().from(paperFiles).where(eq(paperFiles.paperId, paperId));
+  const main = files.find((f) => f.isCanonical);
+  const candidates: typeof files = [];
+  for (const f of files) if (!f.isCanonical && (await storedFileExists(f.r2ObjectKey))) candidates.push(f);
+  if (!main || candidates.length === 0) {
+    await removePaper(paperId, "uploader");
+    return "removed";
+  }
+  const { pickBestFile, setCanonical } = await import("./canonical");
+  const best = pickBestFile(candidates)!;
+  await setCanonical(paperId, best.id);
+  await db.delete(paperFiles).where(eq(paperFiles.id, main.id));
+  await getStorage().delete(main.r2ObjectKey).catch(() => {});
+  return "promoted";
+}

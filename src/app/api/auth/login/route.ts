@@ -7,6 +7,7 @@ import { createSessionToken, sessionCookieOptions, SESSION_COOKIE } from "@/lib/
 import { rateLimitShared, limits } from "@/lib/security/rateLimit";
 import { hashIp } from "@/lib/security/sanitize";
 import { getClientIp, jsonError, readJson } from "@/lib/http";
+import { KNOWN_DEVICE_COOKIE, addKnownDevice, isKnownDevice, knownDeviceCookieOptions } from "@/lib/auth/knownDevice";
 
 export const dynamic = "force-dynamic";
 
@@ -44,8 +45,15 @@ export async function POST(req: NextRequest) {
       SELECT count(*)::int AS nets, coalesce(sum(count), 0)::int AS fails, max(reset_at) AS until
       FROM rate_limits WHERE key LIKE ${`pinfail:${user.id}:%`} AND reset_at > now() AND count > 0`);
     const a0 = (agg.rows as any[])[0] ?? {};
-    if (Number(a0.nets) >= 3 && Number(a0.fails) >= 15) {
-      return jsonError("PIN_LOCKED", lockMessage(new Date(a0.until)), 429);
+    const { getEnv } = await import("@/lib/env");
+    const secret = getEnv().APP_SECRET;
+    const knownDevice = isKnownDevice(req.cookies.get(KNOWN_DEVICE_COOKIE)?.value, user.id, secret);
+    if (Number(a0.nets) >= 3 && Number(a0.fails) >= 15 && !knownDevice) {
+      return jsonError(
+        "PIN_LOCKED",
+        `${lockMessage(new Date(a0.until))} Someone is guessing this account's PIN from several networks. You can still sign in from a device you've used before, or reset your PIN with your recovery code.`,
+        429
+      );
     }
     const netKey = `pinfail:${user.id}:${ipHash}`;
     const peek = await db.execute(sql`SELECT count, reset_at FROM rate_limits WHERE key = ${netKey} AND reset_at > now()`);
@@ -63,11 +71,11 @@ export async function POST(req: NextRequest) {
 
     await db.execute(sql`DELETE FROM rate_limits WHERE key = ${`pinfail:${user.id}:${ipHash}`}`).catch(() => {});
     await db.update(users).set({ failedAttempts: 0, lockedUntil: null, lastLoginAt: new Date() }).where(eq(users.id, user.id));
-    const { getEnv } = await import("@/lib/env");
-    const token = createSessionToken(user.id, getEnv().APP_SECRET, user.sessionVersion ?? 0);
+    const token = createSessionToken(user.id, secret, user.sessionVersion ?? 0);
     const res = NextResponse.json({ data: { id: user.id, username: user.username, displayName: user.displayName } });
     const remember = body.remember !== false;
     res.cookies.set(SESSION_COOKIE, token, remember ? sessionCookieOptions() : { ...sessionCookieOptions(), maxAge: undefined as any });
+    res.cookies.set(KNOWN_DEVICE_COOKIE, addKnownDevice(req.cookies.get(KNOWN_DEVICE_COOKIE)?.value, user.id, secret), knownDeviceCookieOptions);
     return res;
   } catch (e) {
     console.error("[api/auth/login]", e);

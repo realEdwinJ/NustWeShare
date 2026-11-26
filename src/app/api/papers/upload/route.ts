@@ -188,13 +188,7 @@ export async function POST(req: NextRequest) {
       const assessmentType = (meta.assessmentType as any) ?? null; // may be null if skipped (Spec 13 optional)
       const assessmentNumber = meta.assessmentNumber ?? null;
 
-      // If assessmentType is null/undefined (skipped), we need to still create paper? Spec says module is mandatory, other details optional.
-      // For skipped, we can default to EXAM? No, better to create paper with minimal identity: use EXAM with null number? But spec says EXAM/SUPP no number, others need number.
-      // ForMVP, if type is null, default to EXAM and allow paper creation — or create paper with type EXAM and year/semester only
-      // Alternatively, if skipped, we can still create paper with provided year/semester but type null -> we need to handle nullable type? But papers table requires assessmentType not null.
-      // So we must default: if not provided, use "EXAM" as generic, or "TEST" with null?
-      // For spec compliance, we should require type if not skipped; if skipped we can use "EXAM" as fallback but mark as pending?
-      // Simpler: if type is null, use "EXAM" (since it doesn't require number)
+      // Type is required by the schema; a skipped type defaults to EXAM (which needs no number)
       const finalType = assessmentType || "EXAM";
       const finalNumber = finalType === "EXAM" || finalType === "SUPPLEMENTARY" ? null : (assessmentNumber ?? null);
 
@@ -239,13 +233,7 @@ export async function POST(req: NextRequest) {
           // Check for near-duplicate via text fingerprint (different scan, same content)
           const existingByText = await db.select().from(paperFiles).where(eq(paperFiles.textFingerprint, textFingerprint)).limit(1);
           if (existingByText.length > 0) {
-            // Not exact binary but same text content — flag as potential duplicate, but still allow? For MVP, we flag but still store as separate file under same paper?
-            // Per Spec 32, show duplicate dialog but allow upload anyway — for API, we can return duplicate status but still create file?
-            // For now, treat as duplicate but still create? Let's return duplicate status with existing paper, but still allow caller to decide "upload anyway" via flag
-            // If caller didn't set force, we return duplicate
-            // Check if existing file's paper is same identity? If same paper identity, it's expected to be same paper (Spec 30: multiple files per paper)
-            // So we should not block if it's same paper identity — just create new file under same paper
-            // Only flag if different paper identity but same text
+            // Same text as a paper with a different identity → likely a mislabelled duplicate. Same identity is fine (another scan).
             const existingPaperForText = await db.select().from(papers).where(eq(papers.id, existingByText[0].paperId)).limit(1);
             if (existingPaperForText[0] && existingPaperForText[0].id !== paperId) {
               results.push({
@@ -260,8 +248,8 @@ export async function POST(req: NextRequest) {
           }
         }
       } catch (e) {
-        // Text extraction failed — likely scanned PDF, will be handled via perceptual hash stub (Level 4) in future
-        // For now, no fingerprint
+        // Text extraction failed — likely a scanned PDF without a text layer
+        // (perceptual hashing for scans is a future level-4 check)
       }
 
       // An existing paper with a working file keeps it (and its uploader's credit). A new copy is stored
@@ -299,19 +287,25 @@ export async function POST(req: NextRequest) {
         hideUploader,
         uploadIpHash: ipHash,
       };
-      if (becomesCanonical) {
-        // Demote the old (broken) canonical file first so the new one can take the slot
-        await db.update(paperFiles).set({ isCanonical: false }).where(eq(paperFiles.paperId, paperId));
-        try {
-          await db.insert(paperFiles).values({ ...fileValues, isCanonical: true });
-        } catch (e: any) {
-          const m = String(e?.message || "") + String(e?.cause?.message || "");
-          if (!m.includes("uq_pf_one_canonical")) throw e;
-          becomesCanonical = false;
+      try {
+        if (becomesCanonical) {
+          // Demote the old (broken) canonical file first so the new one can take the slot
+          await db.update(paperFiles).set({ isCanonical: false }).where(eq(paperFiles.paperId, paperId));
+          try {
+            await db.insert(paperFiles).values({ ...fileValues, isCanonical: true });
+          } catch (e: any) {
+            const m = String(e?.message || "") + String(e?.cause?.message || "");
+            if (!m.includes("uq_pf_one_canonical")) throw e;
+            becomesCanonical = false;
+            await db.insert(paperFiles).values({ ...fileValues, isCanonical: false });
+          }
+        } else {
           await db.insert(paperFiles).values({ ...fileValues, isCanonical: false });
         }
-      } else {
-        await db.insert(paperFiles).values({ ...fileValues, isCanonical: false });
+      } catch (e) {
+        // Don't leave an unreferenced object in storage if the DB write failed
+        await storage.delete(r2Key).catch(() => {});
+        throw e;
       }
 
       if (!becomesCanonical) {

@@ -14,6 +14,10 @@ export default async function AdminPage() {
   if (!user) redirect("/login?next=/admin");
   if (user.role !== "admin") redirect("/");
   const stats = await getSiteStats();
+  const { getDb } = await import("@/lib/db");
+  const { systemState } = await import("@/db/schema/system_state");
+  const { eq } = await import("drizzle-orm");
+  const [scan] = await getDb().select().from(systemState).where(eq(systemState.key, "integrity_scan")).limit(1).catch(() => []);
   return (
     <Container className="py-8 sm:py-10">
       <PageHeader title="Moderation" description="Review reported papers. Dismiss false reports or remove a paper (its file is deleted from storage)." />
@@ -25,7 +29,7 @@ export default async function AdminPage() {
           </div>
         ))}
       </dl>
-      <AdminClient />
+      <AdminClient lastScan={(scan?.value as { checked: number; hidden: number; checkedAt: string; by?: string } | undefined) ?? null} />
     </Container>
   );
 }

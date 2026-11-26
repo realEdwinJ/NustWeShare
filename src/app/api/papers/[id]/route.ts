@@ -5,7 +5,7 @@ import { papers } from "@/db/schema/papers";
 import { modules } from "@/db/schema/modules";
 import { getPaperDetail } from "@/lib/papers/queries";
 import { getUserFromRequest } from "@/lib/auth/current";
-import { identityTaken, removePaper } from "@/lib/papers/moderation";
+import { identityTaken, removePaper, withdrawMainFile } from "@/lib/papers/moderation";
 import { ASSESSMENT_TYPES, typeHasNumber } from "@/lib/papers/format";
 import { isUuid, jsonError, readJson } from "@/lib/http";
 
@@ -96,6 +96,13 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
   if (!isUuid(id)) return jsonError("NOT_FOUND", "Paper not found.", 404);
   const auth = await authorize(req, id);
   if ("error" in auth) return auth.error;
-  await removePaper(id, auth.user.role === "admin" ? "moderator" : "uploader");
-  return NextResponse.json({ data: { ok: true } });
+  // Moderators take the whole paper down. An uploader withdraws only their own file: if other students
+  // uploaded backup copies, the best one takes over and the paper stays available.
+  const isOwner = auth.d.uploaderIds.includes(auth.user.id);
+  if (auth.user.role === "admin" && !isOwner) {
+    await removePaper(id, "moderator");
+    return NextResponse.json({ data: { ok: true, outcome: "removed" } });
+  }
+  const outcome = await withdrawMainFile(id);
+  return NextResponse.json({ data: { ok: true, outcome } });
 }

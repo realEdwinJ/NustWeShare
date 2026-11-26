@@ -21,6 +21,7 @@ export function RecoveryCodeDialog({ code, username, open, onDone }: { code: str
     <Dialog
       open={open}
       onClose={() => ack && onDone()}
+      dismissible={false}
       title={<span className="flex items-center gap-2"><KeyRound className="size-4 text-warning" /> Save your recovery code</span>}
       description="It's the only way back in if you forget your PIN — we never ask for an email. You won't see it again."
       size="sm"

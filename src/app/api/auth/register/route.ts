@@ -8,6 +8,7 @@ import { createSessionToken, sessionCookieOptions, SESSION_COOKIE } from "@/lib/
 import { rateLimitShared } from "@/lib/security/rateLimit";
 import { hashIp } from "@/lib/security/sanitize";
 import { getClientIp, jsonError, readJson } from "@/lib/http";
+import { KNOWN_DEVICE_COOKIE, addKnownDevice, knownDeviceCookieOptions } from "@/lib/auth/knownDevice";
 import { generateRecoveryCode, hashRecoveryCode } from "@/lib/auth/recovery";
 import { AVATAR_COLORS, RESERVED_USERNAMES, validateDisplayName, validateUsername, weakPinReason } from "@/lib/account/validation";
 
@@ -53,6 +54,7 @@ export async function POST(req: NextRequest) {
     const token = createSessionToken(user.id, getEnv().APP_SECRET, 0);
     const res = NextResponse.json({ data: { ...user, recoveryCode } }, { status: 201, headers: { "Cache-Control": "no-store" } });
     res.cookies.set(SESSION_COOKIE, token, sessionCookieOptions());
+    res.cookies.set(KNOWN_DEVICE_COOKIE, addKnownDevice(req.cookies.get(KNOWN_DEVICE_COOKIE)?.value, user.id, getEnv().APP_SECRET), knownDeviceCookieOptions);
     return res;
   } catch (e: any) {
     const msg = String(e?.message || "") + String(e?.cause?.message || "");
