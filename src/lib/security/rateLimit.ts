@@ -1,4 +1,5 @@
-// In-memory rate limiter for Workers local dev; production can swap to KV/D1 via same interface (Spec 94)
+// Two limiters: rateLimit() is a cheap per-isolate memory limiter (used for search); rateLimitShared() is the
+// Postgres-backed limiter used for everything abuse-sensitive (works across Workers isolates).
 type Entry = { count: number; resetAt: number };
 
 const store = new Map<string, Entry>();

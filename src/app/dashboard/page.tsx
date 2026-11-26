@@ -18,7 +18,7 @@ export default async function DashboardPage() {
   const user = await getCurrentUser();
   if (!user) redirect("/login?next=/dashboard");
   const [uploads, lb] = await Promise.all([listUserUploads(user.id, { includeHidden: true }), getLeaderboard({ limit: 500 })]);
-  const active = uploads.filter((u) => u.status === "active");
+  const active = uploads.filter((u) => u.status === "active" && u.isCanonical);
   const rank = lb.rows.find((r) => r.username === user.username)?.rank ?? null;
   const stats = [
     { k: "Papers shared", v: active.length, icon: FileText },
@@ -74,6 +74,7 @@ export default async function DashboardPage() {
                 views: u.views,
                 downloads: u.downloads,
                 status: u.status,
+                isBackup: !u.isCanonical,
                 hideUploader: u.hideUploader,
                 uploadedAt: u.uploadedAt.toISOString(),
               }))}

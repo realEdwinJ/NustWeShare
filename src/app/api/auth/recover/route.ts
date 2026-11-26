@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { getDb } from "@/lib/db";
 import { users } from "@/db/schema/users";
 import { hashPin, normalizeUsername } from "@/lib/auth/hash";
@@ -46,8 +46,10 @@ export async function POST(req: NextRequest) {
       sessionVersion: sql`${users.sessionVersion} + 1`,
       lastLoginAt: new Date(),
     })
-    .where(eq(users.id, user.id))
+    // Conditional on the code we verified: two concurrent requests can't both spend the same code
+    .where(and(eq(users.id, user.id), eq(users.recoveryHash, user.recoveryHash)))
     .returning({ v: users.sessionVersion });
+  if (!u) return jsonError("INVALID_CREDENTIALS", "That recovery code was just used. Please log in.", 409);
   const { getEnv } = await import("@/lib/env");
   const res = NextResponse.json({ data: { displayName: user.displayName, recoveryCode: nextCode } }, { headers: { "Cache-Control": "no-store" } });
   res.cookies.set(SESSION_COOKIE, createSessionToken(user.id, getEnv().APP_SECRET, u.v), sessionCookieOptions());

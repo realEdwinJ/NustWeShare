@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 
+// Note: Next 16 prefers the `proxy.ts` convention, but proxy runs only on the Node runtime, which the
+// OpenNext Cloudflare adapter can't deploy (tried in this repo's history; it broke the Workers build).
+// Keep `middleware.ts` until OpenNext supports proxy.
+
 const MUTATING = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
 function isCrossSite(req: NextRequest): boolean {

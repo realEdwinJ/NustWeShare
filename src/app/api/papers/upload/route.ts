@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { eq } from "drizzle-orm";
+import { and, eq, ne } from "drizzle-orm";
 import { getDb } from "@/lib/db";
 import { modules } from "@/db/schema/modules";
 import { papers } from "@/db/schema/papers";
@@ -138,7 +138,7 @@ export async function POST(req: NextRequest) {
     if (info?.facultySlug) facultySlug = info.facultySlug;
   } catch {}
 
-  const results: Array<{ filename: string; status: "added" | "duplicate" | "error"; paperId?: string; message?: string; duplicatePaper?: any }> = [];
+  const results: Array<{ filename: string; status: "added" | "duplicate" | "alternate" | "error"; paperId?: string; message?: string; duplicatePaper?: any }> = [];
 
   for (let idx = 0; idx < files.length; idx++) {
     const file = files[idx];
@@ -203,7 +203,7 @@ export async function POST(req: NextRequest) {
       if (semester !== 1 && semester !== 2) throw new AppError("Semester must be 1 or 2.", "INVALID_SEMESTER", 400);
 
       // Find or create paper identity (Spec 30)
-      const { id: paperId } = await findOrCreatePaper({
+      const { id: paperId, created: paperCreated } = await findOrCreatePaper({
         moduleId: moduleRow.id,
         academicYear,
         semester,
@@ -264,6 +264,19 @@ export async function POST(req: NextRequest) {
         // For now, no fingerprint
       }
 
+      // An existing paper with a working file keeps it (and its uploader's credit). A new copy is stored
+      // only as a non-canonical backup; it becomes the served file only if the paper has no working file.
+      let becomesCanonical = paperCreated;
+      if (!paperCreated) {
+        const current = await db
+          .select({ key: paperFiles.r2ObjectKey })
+          .from(paperFiles)
+          .where(and(eq(paperFiles.paperId, paperId), eq(paperFiles.isCanonical, true)));
+        let healthy = false;
+        for (const c of current) if (await storedFileExists(c.key)) { healthy = true; break; }
+        becomesCanonical = !healthy;
+      }
+
       // Generate R2 key and store
       const fileId = randomUUID();
       const r2Key = buildR2Key({ facultySlug, moduleCode: moduleRow.code, academicYear, paperId, fileId });
@@ -283,40 +296,37 @@ export async function POST(req: NextRequest) {
           pageCount,
           textFingerprint,
           perceptualHash: null, // Level 4 stub
-          isCanonical: true, // will be adjusted if multiple files per paper
+          isCanonical: becomesCanonical,
           uploaderId,
           hideUploader,
           uploadIpHash: ipHash,
         })
         .returning({ id: paperFiles.id });
 
+      if (!becomesCanonical) {
+        results.push({
+          filename: originalName,
+          status: "alternate",
+          paperId,
+          message: "We already have this paper, so your copy was kept as a backup. It won't replace the existing file.",
+        });
+        continue;
+      }
+      // This file is now the one served for the paper
+      await db.update(paperFiles).set({ isCanonical: false }).where(and(eq(paperFiles.paperId, paperId), ne(paperFiles.id, inserted[0].id)));
+
       // Update contribution stats for logged-in uploader (Spec 22)
       if (uploaderId) {
         try {
           const { contributionStats } = await import("@/db/schema/contribution_stats");
-          const { eq: eq2 } = await import("drizzle-orm");
-          const existing = await db.select().from(contributionStats).where(eq2(contributionStats.userId, uploaderId)).limit(1);
+          const existing = await db.select().from(contributionStats).where(eq(contributionStats.userId, uploaderId)).limit(1);
           if (existing.length === 0) {
             await db.insert(contributionStats).values({ userId: uploaderId, approvedCount: 1 });
           } else {
-            await db.update(contributionStats).set({ approvedCount: (existing[0].approvedCount || 0) + 1, lastContributionAt: new Date() }).where(eq2(contributionStats.userId, uploaderId));
+            await db.update(contributionStats).set({ approvedCount: (existing[0].approvedCount || 0) + 1, lastContributionAt: new Date() }).where(eq(contributionStats.userId, uploaderId));
           }
         } catch {}
       }
-
-      // If this paper now has multiple files, ensure only one canonical (prefer newest with text)
-      try {
-        const allFiles = await db.select().from(paperFiles).where(eq(paperFiles.paperId, paperId));
-        if (allFiles.length > 1) {
-          // Pick best as canonical via heuristic
-          const { pickBestFile } = await import("@/lib/papers/canonical");
-          const best = pickBestFile(allFiles.map((f) => ({ id: f.id, textFingerprint: f.textFingerprint, pageCount: f.pageCount, fileSize: f.fileSize, createdAt: f.createdAt })));
-          if (best) {
-            const { setCanonical } = await import("@/lib/papers/canonical");
-            await setCanonical(paperId, best.id);
-          }
-        }
-      } catch {}
 
       try {
         await fulfilRequests({ id: paperId, moduleId: moduleRow.id, academicYear, assessmentType: finalType as any });
@@ -340,7 +350,7 @@ export async function POST(req: NextRequest) {
   }
 
   const added = results.filter((r) => r.status === "added").length;
-  const duplicates = results.filter((r) => r.status === "duplicate").length;
+  const duplicates = results.filter((r) => r.status === "duplicate" || r.status === "alternate").length;
   const errors = results.filter((r) => r.status === "error").length;
 
   return NextResponse.json({

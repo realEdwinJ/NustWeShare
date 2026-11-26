@@ -14,7 +14,7 @@ import { RelTime } from "@/components/ui/rel-time";
 
 type Item = {
   fileId: string; paperId: string; moduleCode: string; moduleName: string; academicYear: number; semester: number;
-  assessmentType: string; assessmentNumber: number | null; views: number; downloads: number; status: string; hideUploader: boolean; uploadedAt: string;
+  assessmentType: string; assessmentNumber: number | null; views: number; downloads: number; status: string; hideUploader: boolean; uploadedAt: string; isBackup?: boolean;
 };
 
 export function MyUploads({ items }: { items: Item[] }) {
@@ -56,6 +56,7 @@ export function MyUploads({ items }: { items: Item[] }) {
                       <span className="font-mono font-semibold group-hover:underline">{u.moduleCode}</span>
                       <TypeBadge type={u.assessmentType} number={u.assessmentNumber} />
                       <span className="tabular-nums text-muted-foreground">{u.academicYear} S{u.semester}</span>
+                      {u.isBackup && <Badge variant="outline" title="Someone had already shared this paper; your copy is stored as a backup">Backup copy</Badge>}
                     </span>
                     <span className="block max-w-xs truncate text-xs text-muted-foreground">{u.moduleName}</span>
                   </Link>
@@ -71,7 +72,7 @@ export function MyUploads({ items }: { items: Item[] }) {
               </td>
               <td className="px-4 py-3 text-muted-foreground"><RelTime date={u.uploadedAt} /></td>
               <td className="px-4 py-3">
-                {u.status === "active" && (
+                {u.status === "active" && !u.isBackup && (
                   <span className="flex items-center gap-2">
                     <Switch checked={!hidden[u.fileId]} onCheckedChange={(v) => toggleHide(u.fileId, !v)} label="Show my name on this paper" />
                     {hidden[u.fileId] && <EyeOff className="size-4 text-muted-foreground" aria-label="Anonymous" />}
@@ -79,7 +80,7 @@ export function MyUploads({ items }: { items: Item[] }) {
                 )}
               </td>
               <td className="px-4 py-3 text-right">
-                {u.status === "active" && (
+                {u.status === "active" && !u.isBackup && (
                   <EditPaperDialog compact paper={{ id: u.paperId, moduleCode: u.moduleCode, academicYear: u.academicYear, semester: u.semester, assessmentType: u.assessmentType, assessmentNumber: u.assessmentNumber }} />
                 )}
               </td>

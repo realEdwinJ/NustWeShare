@@ -145,7 +145,7 @@ export async function listUserUploads(userId: string, opts: { includeHidden: boo
     .where(
       opts.includeHidden
         ? eq(paperFiles.uploaderId, userId)
-        : and(eq(paperFiles.uploaderId, userId), eq(paperFiles.hideUploader, false), eq(papers.status, "active"))
+        : and(eq(paperFiles.uploaderId, userId), eq(paperFiles.hideUploader, false), eq(papers.status, "active"), eq(paperFiles.isCanonical, true))
     )
     .orderBy(desc(paperFiles.createdAt))
     .limit(500);
@@ -154,6 +154,7 @@ export async function listUserUploads(userId: string, opts: { includeHidden: boo
     fileId: r.fileId as string,
     status: r.status,
     hideUploader: r.hideUploader as boolean,
+    isCanonical: r.isCanonical as boolean,
     originalFilename: r.originalFilename as string,
     uploadedAt: r.uploadedAt as Date,
   }));
@@ -242,7 +243,8 @@ export async function getPaperDetail(id: string) {
     module: mod,
     canonical,
     fileCount: files.length,
-    uploaderIds: files.map((f) => f.uploaderId).filter(Boolean) as string[],
+    // Ownership (edit/remove rights) belongs to whoever uploaded the served file, never to backup copies
+    uploaderIds: canonical?.uploaderId ? [canonical.uploaderId] : [],
     uploader,
     reportCount: Number(rc[0]?.c ?? 0),
   };

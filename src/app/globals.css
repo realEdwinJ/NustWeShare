@@ -243,8 +243,16 @@ dialog[open] { animation: var(--animate-pop-in); }
 .textLayer .markedContent { display: contents; }
 .textLayer br::selection { background: transparent; }
 .textLayer ::selection { background: rgb(47 107 255 / 0.3); }
-.textLayer .hl { background: rgb(242 165 22 / 0.42); border-radius: 2px; }
-.textLayer .hl.current { background: rgb(255 110 0 / 0.65); outline: 2px solid rgb(255 110 0 / 0.65); }
+/* Inner highlight spans must flow inline inside pdf.js's positioned text spans */
+.textLayer .hl {
+  position: static !important;
+  transform: none !important;
+  font-size: inherit !important;
+  color: transparent;
+  background: rgb(242 165 22 / 0.45);
+  border-radius: 2px;
+}
+.textLayer .hl.current { background: rgb(255 110 0 / 0.7); box-shadow: 0 0 0 2px rgb(255 110 0 / 0.7); }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {

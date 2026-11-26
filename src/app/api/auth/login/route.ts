@@ -47,9 +47,14 @@ export async function POST(req: NextRequest) {
 
     const ok = await verifyPin(pin, user.pinHash);
     if (!ok) {
-      const attempts = (user.failedAttempts || 0) + 1;
+      // Atomic increment: parallel failures can't lose counts
+      const [{ attempts }] = await db
+        .update(users)
+        .set({ failedAttempts: sql`${users.failedAttempts} + 1` })
+        .where(eq(users.id, user.id))
+        .returning({ attempts: users.failedAttempts });
       const lockedUntil = attempts >= 20 ? new Date(Date.now() + Math.min(30, 5 * (attempts - 19)) * 60 * 1000) : null;
-      await db.update(users).set({ failedAttempts: attempts, lockedUntil }).where(eq(users.id, user.id));
+      if (lockedUntil) await db.update(users).set({ lockedUntil }).where(eq(users.id, user.id));
       if (lockedUntil) return jsonError("PIN_LOCKED", lockMessage(lockedUntil), 429);
       const left = perNet.remaining;
       return jsonError(

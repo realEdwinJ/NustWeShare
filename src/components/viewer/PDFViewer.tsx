@@ -177,6 +177,7 @@ export function PDFViewer({ url, title, docId, downloadUrl, defaultZoom = "fit-w
       host.prepend(canvas);
       host.appendChild(layer);
       host.dataset.rendered = "1";
+      host.querySelector(".page-ph")?.remove();
       try {
         const tl = new pdfjs.TextLayer({ textContentSource: p.streamTextContent(), container: layer, viewport });
         await tl.render();
@@ -295,9 +296,32 @@ export function PDFViewer({ url, title, docId, downloadUrl, defaultZoom = "fit-w
     if (!divs) return;
     const q = queryRef.current.toLowerCase();
     divs.forEach((d, i) => {
-      const hit = !!q && (d.textContent || "").toLowerCase().includes(q);
-      d.classList.toggle("hl", hit);
-      d.classList.toggle("current", hit && matchRef.current?.page === n && matchRef.current?.idx === i);
+      const orig = d.dataset.orig ?? d.textContent ?? "";
+      const lower = orig.toLowerCase();
+      if (!q || !lower.includes(q)) {
+        if (d.dataset.orig !== undefined) {
+          d.textContent = orig;
+          delete d.dataset.orig;
+        }
+        return;
+      }
+      // Wrap only the matching characters so the highlight hugs the word, not the whole line
+      d.dataset.orig = orig;
+      const isCurrent = matchRef.current?.page === n && matchRef.current?.idx === i;
+      const frag = document.createDocumentFragment();
+      let pos = 0;
+      let first = true;
+      for (let at = lower.indexOf(q); at !== -1; at = lower.indexOf(q, at + q.length)) {
+        if (at > pos) frag.append(orig.slice(pos, at));
+        const mark = document.createElement("span");
+        mark.className = isCurrent && first ? "hl current" : "hl";
+        mark.textContent = orig.slice(at, at + q.length);
+        frag.append(mark);
+        pos = at + q.length;
+        first = false;
+      }
+      if (pos < orig.length) frag.append(orig.slice(pos));
+      d.replaceChildren(frag);
     });
   }
 
@@ -663,7 +687,7 @@ export function PDFViewer({ url, title, docId, downloadUrl, defaultZoom = "fit-w
                     aria-label={`Page ${i + 1}`}
                     role="img"
                   >
-                    <span className="pointer-events-none absolute inset-0 -z-0 flex items-center justify-center text-sm text-slate-400">{i + 1}</span>
+                    <span className="page-ph pointer-events-none absolute inset-0 flex items-center justify-center text-sm text-slate-400" aria-hidden="true">{i + 1}</span>
                   </div>
                 );
               })}

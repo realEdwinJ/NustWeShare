@@ -9,6 +9,16 @@ import { downloadFilename } from "@/lib/papers/format";
 import { isUuid, jsonError } from "@/lib/http";
 import { handleMissingFile } from "@/lib/papers/moderation";
 
+function wantsHtml(req: NextRequest) {
+  return (req.headers.get("accept") || "").includes("text/html") && !req.headers.get("range");
+}
+
+/** Unknown paper: browsers land on the site's 404 page instead of raw JSON. */
+function notFoundResponse(req: NextRequest, id: string) {
+  if (wantsHtml(req)) return NextResponse.redirect(new URL(isUuid(id) ? `/papers/${id}` : "/not-found", req.url), 303);
+  return jsonError("NOT_FOUND", "Paper not found.", 404);
+}
+
 /** Browsers get sent back to the paper page with an explanation; API clients get JSON. */
 function missingResponse(req: NextRequest, id: string) {
   if ((req.headers.get("accept") || "").includes("text/html") && !req.headers.get("range")) {
@@ -23,7 +33,7 @@ export const dynamic = "force-dynamic";
 // Counts one download per browser per hour; range continuations (resumed downloads) are not re-counted.
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  if (!isUuid(id)) return jsonError("NOT_FOUND", "Paper not found.", 404);
+  if (!isUuid(id)) return notFoundResponse(req, id);
   try {
     const db = getDb();
     const rows = await db
@@ -33,8 +43,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       .where(eq(papers.id, id))
       .limit(1);
     const p = rows[0];
-    if (!p) return jsonError("NOT_FOUND", "Paper not found.", 404);
-    if (p.status === "deleted") return jsonError("PAPER_DELETED", "This paper is no longer available.", 410);
+    if (!p) return notFoundResponse(req, id);
+    if (p.status === "deleted") return wantsHtml(req) ? NextResponse.redirect(new URL(`/papers/${id}`, req.url), 303) : jsonError("PAPER_DELETED", "This paper is no longer available.", 410);
     if (p.status !== "active") return missingResponse(req, id);
     const file = await getCanonicalFile(id);
     if (!file) return missingResponse(req, id);
