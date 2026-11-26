@@ -50,7 +50,7 @@ export function PDFViewer({ url, title, docId, downloadUrl, defaultZoom = "fit-w
   const [fullscreen, setFullscreen] = useState(false);
   const [findOpen, setFindOpen] = useState(false);
   const [query, setQuery] = useState("");
-  const [matches, setMatches] = useState<{ page: number; idx: number }[]>([]);
+  const [matches, setMatches] = useState<{ page: number; idx: number; occ: number }[]>([]);
   const [matchIdx, setMatchIdx] = useState(0);
   const [searching, setSearching] = useState(false);
   const [resumeFrom, setResumeFrom] = useState<number | null>(null);
@@ -288,7 +288,7 @@ export function PDFViewer({ url, title, docId, downloadUrl, defaultZoom = "fit-w
   }
 
   const queryRef = useRef("");
-  const matchRef = useRef<{ page: number; idx: number } | null>(null);
+  const matchRef = useRef<{ page: number; idx: number; occ: number } | null>(null);
 
   function applyHighlights(n: number) {
     const entry = rendered.current.get(n);
@@ -307,18 +307,18 @@ export function PDFViewer({ url, title, docId, downloadUrl, defaultZoom = "fit-w
       }
       // Wrap only the matching characters so the highlight hugs the word, not the whole line
       d.dataset.orig = orig;
-      const isCurrent = matchRef.current?.page === n && matchRef.current?.idx === i;
+      const isCurrentItem = matchRef.current?.page === n && matchRef.current?.idx === i;
       const frag = document.createDocumentFragment();
       let pos = 0;
-      let first = true;
+      let occ = 0;
       for (let at = lower.indexOf(q); at !== -1; at = lower.indexOf(q, at + q.length)) {
         if (at > pos) frag.append(orig.slice(pos, at));
         const mark = document.createElement("span");
-        mark.className = isCurrent && first ? "hl current" : "hl";
+        mark.className = isCurrentItem && matchRef.current?.occ === occ ? "hl current" : "hl";
         mark.textContent = orig.slice(at, at + q.length);
         frag.append(mark);
         pos = at + q.length;
-        first = false;
+        occ++;
       }
       if (pos < orig.length) frag.append(orig.slice(pos));
       d.replaceChildren(frag);
@@ -338,12 +338,16 @@ export function PDFViewer({ url, title, docId, downloadUrl, defaultZoom = "fit-w
     let cancelled = false;
     setSearching(true);
     const t = setTimeout(async () => {
-      const found: { page: number; idx: number }[] = [];
+      const found: { page: number; idx: number; occ: number }[] = [];
       for (let n = 1; n <= numPages; n++) {
         const items = await pageText(n);
         if (cancelled) return;
+        const ql = q.toLowerCase();
         items.forEach((s, idx) => {
-          if (s.toLowerCase().includes(q.toLowerCase())) found.push({ page: n, idx });
+          // One entry per occurrence, so the "x of y" counter matches what's highlighted
+          const low = s.toLowerCase();
+          let occ = 0;
+          for (let at = low.indexOf(ql); at !== -1; at = low.indexOf(ql, at + ql.length)) found.push({ page: n, idx, occ: occ++ });
         });
       }
       setMatches(found);

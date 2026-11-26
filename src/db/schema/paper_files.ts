@@ -1,4 +1,4 @@
-import { pgTable, uuid, varchar, integer, boolean, timestamp, index, check } from "drizzle-orm/pg-core";
+import { pgTable, uuid, varchar, integer, boolean, timestamp, index, check, uniqueIndex } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { papers } from "./papers";
 import { users } from "./users";
@@ -32,6 +32,8 @@ export const paperFiles = pgTable(
     index("idx_pf_text_fp").on(t.textFingerprint),
     index("idx_pf_uploader").on(t.uploaderId),
     index("idx_pf_canonical").on(t.isCanonical),
+    // At most one served (canonical) file per paper — enforced by the DB, so concurrent uploads can't both win
+    uniqueIndex("uq_pf_one_canonical").on(t.paperId).where(sql`is_canonical`),
     check("chk_pf_file_size", sql`file_size > 0 AND file_size <= 3145728`),
     check("chk_pf_mime", sql`mime_type = 'application/pdf'`),
   ]

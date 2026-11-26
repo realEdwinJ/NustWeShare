@@ -35,33 +35,30 @@ export async function POST(req: NextRequest) {
       return jsonError("INVALID_CREDENTIALS", "Invalid username or PIN.", 401);
     }
     const user = rows[0];
-    // Account-wide lock only after many failures from anywhere (stops distributed guessing without letting
-    // one person lock a victim out). Per-network attempts are limited separately below.
-    if (user.lockedUntil && user.lockedUntil.getTime() > Date.now()) {
-      return jsonError("PIN_LOCKED", lockMessage(user.lockedUntil), 429);
+
+    // Lockout model (decays on its own, can't be weaponised by one attacker):
+    //  • per network: 5 wrong PINs → that network waits 15 min (other networks unaffected)
+    //  • account-wide: only when ≥3 different networks are failing within their windows AND ≥15 failures
+    //    in total (a distributed guessing attempt); it lifts automatically as those windows expire.
+    const agg = await db.execute(sql`
+      SELECT count(*)::int AS nets, coalesce(sum(count), 0)::int AS fails, max(reset_at) AS until
+      FROM rate_limits WHERE key LIKE ${`pinfail:${user.id}:%`} AND reset_at > now() AND count > 0`);
+    const a0 = (agg.rows as any[])[0] ?? {};
+    if (Number(a0.nets) >= 3 && Number(a0.fails) >= 15) {
+      return jsonError("PIN_LOCKED", lockMessage(new Date(a0.until)), 429);
     }
-    const perNet = await rateLimitShared({ key: `pinfail:${user.id}:${ipHash}`, limit: 5, windowMs: 15 * 60 * 1000 });
-    if (!perNet.allowed) {
-      return jsonError("PIN_LOCKED", lockMessage(new Date(perNet.resetAt)), 429);
-    }
+    const netKey = `pinfail:${user.id}:${ipHash}`;
+    const peek = await db.execute(sql`SELECT count, reset_at FROM rate_limits WHERE key = ${netKey} AND reset_at > now()`);
+    const cur = (peek.rows as any[])[0];
+    if (cur && Number(cur.count) >= 5) return jsonError("PIN_LOCKED", lockMessage(new Date(cur.reset_at)), 429);
 
     const ok = await verifyPin(pin, user.pinHash);
     if (!ok) {
-      // Atomic increment: parallel failures can't lose counts
-      const [{ attempts }] = await db
-        .update(users)
-        .set({ failedAttempts: sql`${users.failedAttempts} + 1` })
-        .where(eq(users.id, user.id))
-        .returning({ attempts: users.failedAttempts });
-      const lockedUntil = attempts >= 20 ? new Date(Date.now() + Math.min(30, 5 * (attempts - 19)) * 60 * 1000) : null;
-      if (lockedUntil) await db.update(users).set({ lockedUntil }).where(eq(users.id, user.id));
-      if (lockedUntil) return jsonError("PIN_LOCKED", lockMessage(lockedUntil), 429);
-      const left = perNet.remaining;
-      return jsonError(
-        "INVALID_CREDENTIALS",
-        left > 0 ? `Invalid username or PIN. ${left} attempt${left === 1 ? "" : "s"} left before a short pause.` : "Invalid username or PIN.",
-        401
-      );
+      const after = await rateLimitShared({ key: netKey, limit: 5, windowMs: 15 * 60 * 1000 });
+      await db.update(users).set({ failedAttempts: sql`${users.failedAttempts} + 1` }).where(eq(users.id, user.id));
+      if (!after.allowed || after.remaining === 0) return jsonError("PIN_LOCKED", lockMessage(new Date(after.resetAt)), 429);
+      const left = after.remaining;
+      return jsonError("INVALID_CREDENTIALS", `Invalid username or PIN. ${left} attempt${left === 1 ? "" : "s"} left before a short pause.`, 401);
     }
 
     await db.execute(sql`DELETE FROM rate_limits WHERE key = ${`pinfail:${user.id}:${ipHash}`}`).catch(() => {});

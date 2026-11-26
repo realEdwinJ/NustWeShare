@@ -9,11 +9,24 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { useToast } from "@/components/ui/toast";
 import { assessmentLabel, timeAgo } from "@/lib/papers/format";
 
+type Backup = { fileId: string; paperId: string; moduleCode: string; academicYear: number; semester: number; assessmentType: string; assessmentNumber: number | null; fileSize: number; pageCount: number | null; originalFilename: string; uploadedAt: string; uploader: string | null };
 type Row = { paperId: string; status: string; moduleCode: string; academicYear: number; semester: number; assessmentType: string; assessmentNumber: number | null; reportCount: number; reasons: string[]; lastReportAt: string };
 
 export function AdminClient() {
   const [rows, setRows] = useState<Row[] | null>(null);
-  const [filter, setFilter] = useState<"open" | "removed">("open");
+  const [filter, setFilter] = useState<"open" | "removed" | "backups">("open");
+  const [backups, setBackups] = useState<Backup[] | null>(null);
+  const [scanResult, setScanResult] = useState<string | null>(null);
+  useEffect(() => {
+    if (filter !== "backups" || backups) return;
+    fetch("/api/admin/backups").then((r) => r.json()).then((j: any) => setBackups(j.data ?? [])).catch(() => setBackups([]));
+  }, [filter, backups]);
+  async function actBackup(id: string, action: "promote" | "delete") {
+    const r = await fetch(`/api/admin/backups/${id}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action }) });
+    if (!r.ok) return toast({ tone: "error", title: "Action failed" });
+    toast({ tone: "success", title: action === "promote" ? "Backup is now the main file" : "Backup deleted" });
+    setBackups(null);
+  }
   const { toast } = useToast();
   useEffect(() => {
     fetch("/api/admin/reports").then((r) => r.json()).then((j: any) => setRows(j.data ?? [])).catch(() => setRows([]));
@@ -33,7 +46,9 @@ export function AdminClient() {
       const r = await fetch("/api/admin/integrity", { method: "POST" });
       const j = (await r.json()) as any;
       if (!r.ok) throw new Error(j.error?.message);
-      toast({ tone: j.data.hidden ? "info" : "success", title: `Checked ${j.data.checked} files`, description: j.data.hidden ? `${j.data.hidden} paper(s) had missing files and were hidden until re-uploaded.` : "Every file is present in storage." });
+      const summary = j.data.hidden ? `${j.data.hidden} paper(s) had missing files and were hidden until re-uploaded.` : "Every file is present in storage.";
+      setScanResult(`Last check ${new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}: ${j.data.checked} files checked. ${summary}`);
+      toast({ tone: j.data.hidden ? "info" : "success", title: `Checked ${j.data.checked} files`, description: summary });
     } catch (e: any) {
       toast({ tone: "error", title: e?.message || "Scan failed" });
     } finally {
@@ -48,12 +63,38 @@ export function AdminClient() {
         <Button size="sm" variant="outline" onClick={scan} loading={scanning} className="order-last ml-auto">
           <HardDriveDownload /> Check storage integrity
         </Button>
-        {(["open", "removed"] as const).map((f) => (
+        {(["open", "removed", "backups"] as const).map((f) => (
           <Button key={f} size="sm" variant={filter === f ? "secondary" : "ghost"} onClick={() => setFilter(f)} className="capitalize">{f}</Button>
         ))}
       </div>
+      {scanResult && <p className="mt-3 text-sm text-muted-foreground" role="status">{scanResult}</p>}
       <div className="mt-4">
-        {rows === null ? (
+        {filter === "backups" ? (
+          backups === null ? (
+            <div className="skeleton h-32 rounded-2xl" />
+          ) : backups.length === 0 ? (
+            <EmptyState icon={<ShieldCheck />} title="No backup copies" description="When someone uploads a paper that already exists, their copy waits here. Promote it if it's a better scan." />
+          ) : (
+            <ul className="divide-y rounded-2xl border bg-card">
+              {backups.map((b) => (
+                <li key={b.fileId} className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center">
+                  <div className="min-w-0 flex-1">
+                    <Link href={`/papers/${b.paperId}`} className="font-medium hover:underline">
+                      <span className="font-mono">{b.moduleCode}</span> {assessmentLabel(b.assessmentType, b.assessmentNumber)} {b.academicYear} S{b.semester}
+                    </Link>
+                    <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                      {b.originalFilename} · {b.pageCount ?? "?"} pages · {Math.round(b.fileSize / 1024)} KB · by {b.uploader ?? "guest"} · {timeAgo(b.uploadedAt)}
+                    </p>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button size="sm" variant="outline" onClick={() => actBackup(b.fileId, "promote")}><Check /> Make main file</Button>
+                    <Button size="sm" variant="destructive" onClick={() => actBackup(b.fileId, "delete")}><Trash2 /> Delete</Button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )
+        ) : rows === null ? (
           <div className="skeleton h-32 rounded-2xl" />
         ) : shown.length === 0 ? (
           <EmptyState icon={<ShieldCheck />} title={filter === "open" ? "Nothing to review" : "No removed papers"} description="Reported papers show up here." />

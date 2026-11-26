@@ -23,7 +23,7 @@ export type FileMeta = {
 };
 
 const thisYear = new Date().getFullYear();
-const YEARS = Array.from({ length: 16 }, (_, i) => thisYear + 1 - i);
+const YEARS = Array.from({ length: 16 }, (_, i) => thisYear - i);
 
 export function FileCard({ meta, onChange, onRemove, onApplyAll, canApplyAll }: { meta: FileMeta; onChange: (p: Partial<FileMeta>) => void; onRemove: () => void; onApplyAll: () => void; canApplyAll: boolean }) {
   const locked = meta.state !== "ready" && meta.state !== "error";

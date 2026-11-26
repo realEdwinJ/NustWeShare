@@ -47,7 +47,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ cod
   const year = body?.academicYear ? Number(body.academicYear) : null;
   const type = body?.assessmentType ? String(body.assessmentType).toUpperCase() : null;
   const note = body?.note ? String(body.note).replace(/[\u0000-\u001f\u007f]/g, " ").trim().slice(0, 200) : null;
-  if (year !== null && (!Number.isInteger(year) || year < 2000 || year > new Date().getFullYear() + 1)) return jsonError("VALIDATION_ERROR", "Invalid year.");
+  if (year !== null && (!Number.isInteger(year) || year < 2000 || year > new Date().getFullYear())) return jsonError("VALIDATION_ERROR", "Invalid year.");
   if (type !== null && !(ASSESSMENT_TYPES as readonly string[]).includes(type)) return jsonError("VALIDATION_ERROR", "Invalid type.");
   const mod = await findModule(code);
   if (!mod) return jsonError("NOT_FOUND", "Module not found.", 404);

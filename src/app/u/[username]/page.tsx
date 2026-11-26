@@ -27,7 +27,8 @@ async function load(username: string) {
 export async function generateMetadata({ params }: { params: Promise<{ username: string }> }) {
   const { username } = await params;
   const u = await load(username).catch(() => null);
-  if (!u || !u.publicProfile) return { title: "Profile", robots: { index: false } };
+  if (!u) return { title: "Profile not found", robots: { index: false } };
+  if (!u.publicProfile) return { title: "Private profile", robots: { index: false } };
   return { title: `${u.displayName} (@${u.username})`, description: `Past papers shared by ${u.displayName} on NustWeShare.` };
 }
 

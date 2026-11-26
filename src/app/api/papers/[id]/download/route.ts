@@ -6,7 +6,9 @@ import { modules } from "@/db/schema/modules";
 import { getCanonicalFile } from "@/lib/papers/canonical";
 import { serveStoredFile } from "@/lib/r2/serve";
 import { downloadFilename } from "@/lib/papers/format";
-import { isUuid, jsonError } from "@/lib/http";
+import { getClientIp, isUuid, jsonError } from "@/lib/http";
+import { rateLimitShared } from "@/lib/security/rateLimit";
+import { hashIp } from "@/lib/security/sanitize";
 import { handleMissingFile } from "@/lib/papers/moderation";
 
 function wantsHtml(req: NextRequest) {
@@ -49,10 +51,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     const file = await getCanonicalFile(id);
     if (!file) return missingResponse(req, id);
 
-    const cookieName = `dl_${id.slice(0, 8)}`;
     const range = req.headers.get("range");
     const isContinuation = !!range && !/^bytes=0-/.test(range);
-    const already = req.cookies.get(cookieName)?.value === "1";
 
     const name = req.nextUrl.searchParams.get("name") === "original" ? file.originalFilename : downloadFilename(p);
     const res = await serveStoredFile(req, file.r2ObjectKey, { disposition: "attachment", filename: name, cacheControl: "private, no-cache" });
@@ -60,12 +60,11 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       await handleMissingFile(id).catch(() => {});
       return missingResponse(req, id);
     }
-    // Count only real, first-time, successful downloads (not 304s, failures or resumed ranges)
-    if (!already && !isContinuation && (res.status === 200 || res.status === 206)) {
-      await db.update(papers).set({ downloads: sql`${papers.downloads} + 1` }).where(eq(papers.id, id));
-      const out = new NextResponse(res.body, { status: res.status, headers: res.headers });
-      out.cookies.set(cookieName, "1", { httpOnly: true, sameSite: "lax", maxAge: 3600, path: "/" });
-      return out;
+    // Count only real, successful downloads; repeats from the same network within an hour count once.
+    // De-duplicated server-side (no per-paper cookies piling up in the browser).
+    if (!isContinuation && (res.status === 200 || res.status === 206)) {
+      const first = await rateLimitShared({ key: `dl:${hashIp(getClientIp(req)).slice(0, 16)}:${id}`, limit: 1, windowMs: 60 * 60 * 1000 });
+      if (first.allowed) await db.update(papers).set({ downloads: sql`${papers.downloads} + 1` }).where(eq(papers.id, id));
     }
     return res;
   } catch (e) {

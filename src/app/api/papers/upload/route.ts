@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { and, eq, ne } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { getDb } from "@/lib/db";
 import { modules } from "@/db/schema/modules";
 import { papers } from "@/db/schema/papers";
@@ -199,7 +199,7 @@ export async function POST(req: NextRequest) {
       const finalNumber = finalType === "EXAM" || finalType === "SUPPLEMENTARY" ? null : (assessmentNumber ?? null);
 
       // Validate year/semester range
-      if (!Number.isInteger(academicYear) || academicYear < 2000 || academicYear > nowYear + 1) throw new AppError("That year doesn\u2019t look right.", "INVALID_YEAR", 400);
+      if (!Number.isInteger(academicYear) || academicYear < 2000 || academicYear > nowYear) throw new AppError("That year doesn\u2019t look right.", "INVALID_YEAR", 400);
       if (semester !== 1 && semester !== 2) throw new AppError("Semester must be 1 or 2.", "INVALID_SEMESTER", 400);
 
       // Find or create paper identity (Spec 30)
@@ -283,25 +283,36 @@ export async function POST(req: NextRequest) {
 
       await storage.put(r2Key, buf, "application/pdf");
 
-      // Create paper_files row
-      const inserted = await db
-        .insert(paperFiles)
-        .values({
-          paperId,
-          r2ObjectKey: r2Key,
-          originalFilename: originalName,
-          fileSize: buf.length,
-          mimeType: "application/pdf",
-          sha256: hash,
-          pageCount,
-          textFingerprint,
-          perceptualHash: null, // Level 4 stub
-          isCanonical: becomesCanonical,
-          uploaderId,
-          hideUploader,
-          uploadIpHash: ipHash,
-        })
-        .returning({ id: paperFiles.id });
+      // Create paper_files row. The DB allows one canonical file per paper; if a concurrent upload claimed it
+      // first, this copy is stored as a backup instead.
+      const fileValues = {
+        paperId,
+        r2ObjectKey: r2Key,
+        originalFilename: originalName,
+        fileSize: buf.length,
+        mimeType: "application/pdf",
+        sha256: hash,
+        pageCount,
+        textFingerprint,
+        perceptualHash: null, // Level 4 stub
+        uploaderId,
+        hideUploader,
+        uploadIpHash: ipHash,
+      };
+      if (becomesCanonical) {
+        // Demote the old (broken) canonical file first so the new one can take the slot
+        await db.update(paperFiles).set({ isCanonical: false }).where(eq(paperFiles.paperId, paperId));
+        try {
+          await db.insert(paperFiles).values({ ...fileValues, isCanonical: true });
+        } catch (e: any) {
+          const m = String(e?.message || "") + String(e?.cause?.message || "");
+          if (!m.includes("uq_pf_one_canonical")) throw e;
+          becomesCanonical = false;
+          await db.insert(paperFiles).values({ ...fileValues, isCanonical: false });
+        }
+      } else {
+        await db.insert(paperFiles).values({ ...fileValues, isCanonical: false });
+      }
 
       if (!becomesCanonical) {
         results.push({
@@ -312,8 +323,6 @@ export async function POST(req: NextRequest) {
         });
         continue;
       }
-      // This file is now the one served for the paper
-      await db.update(paperFiles).set({ isCanonical: false }).where(and(eq(paperFiles.paperId, paperId), ne(paperFiles.id, inserted[0].id)));
 
       // Update contribution stats for logged-in uploader (Spec 22)
       if (uploaderId) {

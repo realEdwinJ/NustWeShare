@@ -106,7 +106,7 @@ export function EditPaperDialog({ paper, compact, open: openProp, onOpenChange, 
           <div>
             <Label htmlFor="ep-year">Year</Label>
             <Select id="ep-year" value={f.academicYear} onChange={(e) => setF({ ...f, academicYear: Number(e.target.value) })} className="mt-1.5">
-              {Array.from({ length: 20 }, (_, i) => thisYear + 1 - i).map((y) => <option key={y} value={y}>{y}</option>)}
+              {Array.from({ length: 20 }, (_, i) => thisYear - i).map((y) => <option key={y} value={y}>{y}</option>)}
             </Select>
           </div>
           <div>

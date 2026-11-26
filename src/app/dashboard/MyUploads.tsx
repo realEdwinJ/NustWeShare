@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Download, Eye, EyeOff } from "lucide-react";
+import { Download, Eye, EyeOff, Trash2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/components/ui/toast";
@@ -21,6 +22,15 @@ export function MyUploads({ items }: { items: Item[] }) {
   const [hidden, setHidden] = useState<Record<string, boolean>>(Object.fromEntries(items.map((i) => [i.fileId, i.hideUploader])));
   const { toast } = useToast();
   const router = useRouter();
+
+  const [gone, setGone] = useState<Set<string>>(new Set());
+  async function removeBackup(id: string) {
+    const r = await fetch(`/api/account/uploads/${id}`, { method: "DELETE" });
+    if (!r.ok) return toast({ tone: "error", title: "Couldn't remove the backup" });
+    setGone((g) => new Set(g).add(id));
+    toast({ tone: "success", title: "Backup copy removed" });
+    router.refresh();
+  }
 
   async function toggleHide(id: string, v: boolean) {
     setHidden((h) => ({ ...h, [id]: v }));
@@ -47,7 +57,7 @@ export function MyUploads({ items }: { items: Item[] }) {
           </tr>
         </thead>
         <tbody>
-          {items.map((u) => (
+          {items.filter((u) => !gone.has(u.fileId)).map((u) => (
             <tr key={u.fileId} className="border-b last:border-0">
               <td className="px-4 py-3">
                 {u.status === "active" ? (
@@ -67,8 +77,14 @@ export function MyUploads({ items }: { items: Item[] }) {
                 )}
               </td>
               <td className="px-4 py-3 text-muted-foreground">
-                <span className="inline-flex items-center gap-1"><Eye className="size-3.5" />{compactNumber(u.views)}</span>
-                <span className="ml-3 inline-flex items-center gap-1"><Download className="size-3.5" />{compactNumber(u.downloads)}</span>
+                {u.isBackup ? (
+                  <span title="Stats belong to the main copy">—</span>
+                ) : (
+                  <>
+                    <span className="inline-flex items-center gap-1"><Eye className="size-3.5" />{compactNumber(u.views)}</span>
+                    <span className="ml-3 inline-flex items-center gap-1"><Download className="size-3.5" />{compactNumber(u.downloads)}</span>
+                  </>
+                )}
               </td>
               <td className="px-4 py-3 text-muted-foreground"><RelTime date={u.uploadedAt} /></td>
               <td className="px-4 py-3">
@@ -80,6 +96,11 @@ export function MyUploads({ items }: { items: Item[] }) {
                 )}
               </td>
               <td className="px-4 py-3 text-right">
+                {u.status === "active" && u.isBackup && (
+                  <Button variant="ghost" size="sm" className="text-destructive" onClick={() => removeBackup(u.fileId)}>
+                    <Trash2 /> Remove backup
+                  </Button>
+                )}
                 {u.status === "active" && !u.isBackup && (
                   <EditPaperDialog compact paper={{ id: u.paperId, moduleCode: u.moduleCode, academicYear: u.academicYear, semester: u.semester, assessmentType: u.assessmentType, assessmentNumber: u.assessmentNumber }} />
                 )}

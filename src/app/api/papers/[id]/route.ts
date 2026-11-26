@@ -74,7 +74,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const semester = body.semester != null ? Number(body.semester) : cur.semester;
   const assessmentType = body.assessmentType != null ? String(body.assessmentType).toUpperCase() : cur.assessmentType;
   let assessmentNumber = body.assessmentNumber !== undefined ? (body.assessmentNumber === null || body.assessmentNumber === "" ? null : Number(body.assessmentNumber)) : cur.assessmentNumber;
-  if (!Number.isInteger(academicYear) || academicYear < 2000 || academicYear > new Date().getFullYear() + 1) return jsonError("VALIDATION_ERROR", "Invalid year.");
+  if (!Number.isInteger(academicYear) || academicYear < 2000 || academicYear > new Date().getFullYear()) return jsonError("VALIDATION_ERROR", "Invalid year.");
   if (semester !== 1 && semester !== 2) return jsonError("VALIDATION_ERROR", "Semester must be 1 or 2.");
   if (!(ASSESSMENT_TYPES as readonly string[]).includes(assessmentType)) return jsonError("VALIDATION_ERROR", "Invalid assessment type.");
   if (!typeHasNumber(assessmentType)) assessmentNumber = null;
