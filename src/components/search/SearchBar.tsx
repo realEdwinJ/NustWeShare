@@ -2,11 +2,18 @@
 
 import { useEffect, useId, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowRight, BookOpen, GraduationCap, Search } from "lucide-react";
+import { ArrowRight, BookOpen, FileText, GraduationCap, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { recentSearches } from "@/lib/client/library";
+import { moduleHref } from "@/lib/searchIntent";
+import { assessmentLabel } from "@/lib/papers/format";
 
-type Result = { modules: { code: string; name: string; paperCount: number }[]; programmes: { code: string; name: string; href: string }[] };
+type Result = {
+  modules: { code: string; name: string; paperCount: number }[];
+  programmes: { code: string; name: string; href: string }[];
+  papers: { id: string; moduleCode: string; academicYear: number; semester: number; assessmentType: string; assessmentNumber: number | null }[];
+  intent: { year?: number; type?: string; semester?: number };
+};
 
 export function SearchBar({ large = false, placeholder = "Search by module code or name", defaultValue = "", autoFocus }: { large?: boolean; placeholder?: string; defaultValue?: string; autoFocus?: boolean }) {
   const [q, setQ] = useState(defaultValue);
@@ -30,7 +37,7 @@ export function SearchBar({ large = false, placeholder = "Search by module code 
         const r = await fetch(`/api/search?q=${encodeURIComponent(term)}&limit=7`, { signal: ctrl.signal });
         const j = (await r.json()) as any;
         if (j.data) {
-          setRes({ modules: j.data.modules.slice(0, 7), programmes: j.data.programmes.slice(0, 3) });
+          setRes({ modules: j.data.modules.slice(0, 7), programmes: j.data.programmes.slice(0, 3), papers: (j.data.papers ?? []).slice(0, 4), intent: j.data.intent ?? {} });
           setOpen(true);
           setActive(-1);
         }
@@ -50,7 +57,20 @@ export function SearchBar({ large = false, placeholder = "Search by module code 
     return () => document.removeEventListener("mousedown", onDown);
   }, []);
 
-  const items = res ? [...res.modules.map((m) => ({ href: `/modules/${m.code.toLowerCase()}`, ...m, kind: "module" as const })), ...res.programmes.map((p) => ({ ...p, paperCount: 0, kind: "programme" as const }))] : [];
+  const items = res
+    ? [
+        ...res.papers.map((p) => ({
+          kind: "paper" as const,
+          href: `/papers/${p.id}`,
+          code: p.id,
+          name: `${p.moduleCode} ${assessmentLabel(p.assessmentType, p.assessmentNumber)} ${p.academicYear}`,
+          paperCount: 0,
+          sub: `Semester ${p.semester}`,
+        })),
+        ...res.modules.map((m) => ({ ...m, href: moduleHref(m.code, res.intent as any), kind: "module" as const, sub: m.name })),
+        ...res.programmes.map((p) => ({ ...p, paperCount: 0, kind: "programme" as const, sub: `Programme · ${p.code}` })),
+      ]
+    : [];
 
   function go(href: string) {
     if (q.trim().length >= 2) recentSearches.add(q.trim());
@@ -125,11 +145,11 @@ export function SearchBar({ large = false, placeholder = "Search by module code 
                     className={cn("flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left", i === active && "bg-accent")}
                   >
                     <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-                      {it.kind === "module" ? <BookOpen className="size-4" /> : <GraduationCap className="size-4" />}
+                      {it.kind === "module" ? <BookOpen className="size-4" /> : it.kind === "paper" ? <FileText className="size-4" /> : <GraduationCap className="size-4" />}
                     </span>
                     <span className="min-w-0 flex-1">
                       <span className={cn("block text-sm font-medium", it.kind === "module" && "font-mono")}>{it.kind === "module" ? it.code : it.name}</span>
-                      <span className="block truncate text-xs text-muted-foreground">{it.kind === "module" ? it.name : `Programme · ${it.code}`}</span>
+                      <span className="block truncate text-xs text-muted-foreground">{it.sub}</span>
                     </span>
                     {it.kind === "module" &&
                       (it.paperCount > 0 ? (

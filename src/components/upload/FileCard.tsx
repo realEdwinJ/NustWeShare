@@ -14,7 +14,7 @@ export type FileMeta = {
   assessmentType: string;
   assessmentNumber: number | null;
   academicYear: number;
-  semester: number;
+  semester: number | null;
   suggested: boolean;
   state: UploadState;
   progress: number;
@@ -77,7 +77,15 @@ export function FileCard({ meta, onChange, onRemove, onApplyAll, canApplyAll }: 
           </label>
           <label className="text-xs font-medium text-muted-foreground">
             Semester
-            <Select value={meta.semester} onChange={(e) => onChange({ semester: Number(e.target.value) })} className="mt-1 h-10 text-sm text-foreground">
+            <Select
+              value={meta.semester ?? ""}
+              onChange={(e) => onChange({ semester: e.target.value ? Number(e.target.value) : null })}
+              aria-invalid={!meta.semester || undefined}
+              className={cn("mt-1 h-10 text-sm text-foreground", !meta.semester && "border-warning")}
+            >
+              <option value="" disabled>
+                Choose…
+              </option>
               <option value={1}>Semester 1</option>
               <option value={2}>Semester 2</option>
             </Select>

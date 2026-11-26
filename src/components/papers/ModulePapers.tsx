@@ -41,10 +41,10 @@ export function TypeBadge({ type, number }: { type: string; number?: number | nu
   return <Badge variant={TYPE_TONE[type] ?? "secondary"}>{assessmentLabel(type, number)}</Badge>;
 }
 
-export function ModulePapers({ moduleCode, moduleName, papers, savedIds = [] }: { moduleCode: string; moduleName: string; papers: ModulePaper[]; savedIds?: string[] }) {
-  const [year, setYear] = useState<string>("all");
-  const [type, setType] = useState<string>("all");
-  const [sem, setSem] = useState<string>("all");
+export function ModulePapers({ moduleCode, moduleName, papers, savedIds = [], initialFilters }: { moduleCode: string; moduleName: string; papers: ModulePaper[]; savedIds?: string[]; initialFilters?: { year?: string; type?: string; sem?: string } }) {
+  const [year, setYear] = useState<string>(initialFilters?.year ?? "all");
+  const [type, setType] = useState<string>(initialFilters?.type ?? "all");
+  const [sem, setSem] = useState<string>(initialFilters?.sem ?? "all");
   const [view, setView] = useState<"grouped" | "table">("grouped");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const zip = useZipDownload();

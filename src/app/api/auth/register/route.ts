@@ -54,7 +54,7 @@ export async function POST(req: NextRequest) {
     const token = createSessionToken(user.id, getEnv().APP_SECRET, 0);
     const res = NextResponse.json({ data: { ...user, recoveryCode } }, { status: 201, headers: { "Cache-Control": "no-store" } });
     res.cookies.set(SESSION_COOKIE, token, sessionCookieOptions());
-    res.cookies.set(KNOWN_DEVICE_COOKIE, addKnownDevice(req.cookies.get(KNOWN_DEVICE_COOKIE)?.value, user.id, getEnv().APP_SECRET), knownDeviceCookieOptions);
+    res.cookies.set(KNOWN_DEVICE_COOKIE, addKnownDevice(req.cookies.get(KNOWN_DEVICE_COOKIE)?.value, user.id, 0, getEnv().APP_SECRET), knownDeviceCookieOptions);
     return res;
   } catch (e: any) {
     const msg = String(e?.message || "") + String(e?.cause?.message || "");

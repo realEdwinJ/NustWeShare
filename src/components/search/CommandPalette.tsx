@@ -6,6 +6,8 @@ import { ArrowRight, BookOpen, Clock, CornerDownLeft, FileText, GraduationCap, S
 import { cn } from "@/lib/utils";
 import { Kbd } from "@/components/ui/kbd";
 import { recentPapers, recentSearches } from "@/lib/client/library";
+import { moduleHref } from "@/lib/searchIntent";
+import { assessmentLabel } from "@/lib/papers/format";
 
 type Item = { key: string; href: string; title: string; subtitle?: string; icon: "module" | "programme" | "paper" | "recent" | "action" | "search"; badge?: string };
 
@@ -86,9 +88,17 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
       try {
         const res = await fetch(`/api/search?q=${encodeURIComponent(term)}`, { signal: ctrl.signal });
         const json = (await res.json()) as any;
+        const intent = json.data?.intent ?? {};
+        const papers: Item[] = (json.data?.papers ?? []).slice(0, 5).map((p: any) => ({
+          key: `pp-${p.id}`,
+          href: `/papers/${p.id}`,
+          title: `${p.moduleCode} ${assessmentLabel(p.assessmentType, p.assessmentNumber)} ${p.academicYear}`,
+          subtitle: `Semester ${p.semester}${p.pageCount ? ` · ${p.pageCount} pages` : ""}`,
+          icon: "paper",
+        }));
         const mods: Item[] = (json.data?.modules ?? []).slice(0, 8).map((m: any) => ({
           key: `m-${m.code}`,
-          href: `/modules/${m.code.toLowerCase()}`,
+          href: moduleHref(m.code, intent),
           title: m.code,
           subtitle: m.name,
           icon: "module",
@@ -101,7 +111,7 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
           subtitle: p.code,
           icon: "programme",
         }));
-        setItems([...mods, ...progs, { key: "s-all", href: `/search?q=${encodeURIComponent(term)}`, title: `See all results for “${term}”`, icon: "search" }]);
+        setItems([...papers, ...mods, ...progs, { key: "s-all", href: `/search?q=${encodeURIComponent(term)}`, title: `See all results for “${term}”`, icon: "search" }]);
         setActive(0);
       } catch {
       } finally {

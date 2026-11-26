@@ -32,8 +32,9 @@ export async function generateMetadata({ params }: { params: Promise<{ code: str
   }
 }
 
-export default async function ModulePage({ params }: { params: Promise<{ code: string }> }) {
+export default async function ModulePage({ params, searchParams }: { params: Promise<{ code: string }>; searchParams: Promise<{ year?: string; type?: string; sem?: string }> }) {
   const { code } = await params;
+  const sp = await searchParams;
   if (!/^[a-z0-9]{2,20}$/i.test(code)) notFound();
   const m = await getModuleByCode(code);
   if (!m) notFound();
@@ -122,7 +123,17 @@ export default async function ModulePage({ params }: { params: Promise<{ code: s
 
       <section className="mt-8" aria-labelledby="papers-h">
         <h2 id="papers-h" className="sr-only">Papers</h2>
-        <ModulePapers moduleCode={m.code} moduleName={m.name} papers={serialized} savedIds={savedIds} />
+        <ModulePapers
+          moduleCode={m.code}
+          moduleName={m.name}
+          papers={serialized}
+          savedIds={savedIds}
+          initialFilters={{
+            year: sp.year && /^\d{4}$/.test(sp.year) ? sp.year : undefined,
+            type: sp.type && /^[A-Z]+$/.test(sp.type) ? sp.type : undefined,
+            sem: sp.sem === "1" || sp.sem === "2" ? sp.sem : undefined,
+          }}
+        />
       </section>
 
       <div className="mt-10 grid gap-6 lg:grid-cols-5">

@@ -85,8 +85,8 @@ export function UploadClient() {
           assessmentType: type,
           assessmentNumber: type === "EXAM" || type === "SUPPLEMENTARY" ? null : (s.assessmentNumber ?? 1),
           academicYear: s.year ?? prefYear ?? new Date().getFullYear(),
-          semester: /s(em)?[_ -]?2|second/i.test(f.name) ? 2 : 1,
-          suggested: !!(s.year || s.assessmentType),
+          semester: s.semester ?? null, // never guessed: if the filename doesn't say, the student picks
+          suggested: !!(s.year || s.assessmentType || s.semester),
           state: "ready",
           progress: 0,
         });
@@ -104,6 +104,7 @@ export function UploadClient() {
     if (!mod) return;
     setBusy(true);
     let added = 0;
+    let backups = 0;
     for (const f of files) {
       if (f.state !== "ready" && f.state !== "error") continue;
       patch(f.key, { state: "uploading", progress: 3, message: undefined });
@@ -124,17 +125,23 @@ export function UploadClient() {
         if (r?.status === "added") {
           added++;
           patch(f.key, { state: "added", progress: 100, message: "Added — thank you!", paperId: r.paperId });
-        } else if (r?.status === "duplicate") patch(f.key, { state: "duplicate", progress: 100, message: "We already have this file.", paperId: r.paperId });
-        else patch(f.key, { state: "error", message: r?.message || "Upload failed." });
+        } else if (r?.status === "alternate") {
+          backups++;
+          patch(f.key, { state: "duplicate", progress: 100, message: "This paper is already here, so your copy was kept as a backup.", paperId: r.paperId });
+        } else if (r?.status === "duplicate") {
+          patch(f.key, { state: "duplicate", progress: 100, message: r.message || "We already have this file.", paperId: r.paperId });
+        } else patch(f.key, { state: "error", message: r?.message || "Upload failed." });
       } catch (e: any) {
         patch(f.key, { state: "error", message: e?.message || "Upload failed." });
       }
     }
     setBusy(false);
     if (added) toast({ tone: "success", title: `${added} paper${added === 1 ? "" : "s"} added to ${mod.code}`, description: "Thank you for helping the next student ❤️" });
+    else if (backups) toast({ title: `Kept ${backups} backup cop${backups === 1 ? "y" : "ies"}`, description: "Those papers were already here. Moderators can promote a clearer scan." });
   }
 
   const pending = files.filter((f) => f.state === "ready" || f.state === "error").length;
+  const missingSemester = files.filter((f) => (f.state === "ready" || f.state === "error") && !f.semester).length;
   const done = files.length > 0 && pending === 0 && !busy;
   const addedCount = files.filter((f) => f.state === "added").length;
 
@@ -183,7 +190,7 @@ export function UploadClient() {
                 onChange={(p) => patch(f.key, p)}
                 onRemove={() => setFiles((cur) => cur.filter((x) => x.key !== f.key))}
                 canApplyAll={files.length > 1}
-                onApplyAll={() => setFiles((cur) => cur.map((x) => (x.state === "ready" ? { ...x, academicYear: f.academicYear, semester: f.semester } : x)))}
+                onApplyAll={() => setFiles((cur) => cur.map((x) => (x.state === "ready" ? { ...x, academicYear: f.academicYear, semester: f.semester ?? x.semester } : x)))}
               />
             ))}
           </div>
@@ -201,7 +208,7 @@ export function UploadClient() {
           </div>
         </div>
       ) : (
-        <div className="flex flex-col gap-4 rounded-3xl border bg-card p-5 sm:flex-row sm:items-center sm:p-6">
+        <div className="flex flex-col gap-4 rounded-3xl border bg-card p-5 sm:flex-row sm:flex-wrap sm:items-center sm:p-6">
           {user ? (
             <label className="flex flex-1 items-center gap-3 text-sm">
               <Switch checked={anon} onCheckedChange={setAnon} label="Upload anonymously" />
@@ -215,7 +222,12 @@ export function UploadClient() {
               Uploading as a guest. <Link href="/register?next=/upload" className="font-medium text-info hover:underline">Create a profile</Link> to get credit on the leaderboard.
             </p>
           )}
-          <Button size="lg" variant="brand" onClick={submit} disabled={!mod || pending === 0 || busy} loading={busy}>
+          {missingSemester > 0 && !busy && (
+            <p className="text-sm text-warning sm:order-first sm:basis-full" role="status">
+              Choose the semester for {missingSemester} file{missingSemester === 1 ? "" : "s"} — it&apos;s on the paper&apos;s cover page.
+            </p>
+          )}
+          <Button size="lg" variant="brand" onClick={submit} disabled={!mod || pending === 0 || busy || missingSemester > 0} loading={busy}>
             {busy ? "Uploading…" : <><Heart /> Share {pending || ""} paper{pending === 1 ? "" : "s"}</>}
           </Button>
         </div>

@@ -5,6 +5,7 @@ import { users } from "@/db/schema/users";
 import { getUserFromRequest } from "@/lib/auth/current";
 import { hashPin, verifyPin } from "@/lib/auth/hash";
 import { createSessionToken, sessionCookieOptions, SESSION_COOKIE } from "@/lib/auth/session";
+import { KNOWN_DEVICE_COOKIE, addKnownDevice, knownDeviceCookieOptions } from "@/lib/auth/knownDevice";
 import { jsonError, readJson } from "@/lib/http";
 import { rateLimitShared } from "@/lib/security/rateLimit";
 import { weakPinReason } from "@/lib/account/validation";
@@ -34,5 +35,6 @@ export async function POST(req: NextRequest) {
   const { getEnv } = await import("@/lib/env");
   const res = NextResponse.json({ data: { ok: true } });
   res.cookies.set(SESSION_COOKIE, createSessionToken(user.id, getEnv().APP_SECRET, updated[0].v), sessionCookieOptions());
+  res.cookies.set(KNOWN_DEVICE_COOKIE, addKnownDevice(req.cookies.get(KNOWN_DEVICE_COOKIE)?.value, user.id, updated[0].v, getEnv().APP_SECRET), knownDeviceCookieOptions);
   return res;
 }

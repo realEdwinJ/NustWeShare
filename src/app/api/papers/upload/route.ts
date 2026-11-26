@@ -8,7 +8,8 @@ import { randomUUID } from "crypto";
 import { validatePdfFile, validatePdfMagic } from "@/lib/validation/pdf";
 import { AppError } from "@/lib/errors";
 import { sha256 } from "@/lib/duplicates/sha256";
-import { fingerprintFromText, normalizeText } from "@/lib/duplicates/textFingerprint";
+import { fingerprintFromText } from "@/lib/duplicates/textFingerprint";
+import { extractPdfText } from "@/lib/pdf/extractText";
 import { findOrCreatePaper } from "@/lib/papers/resolve";
 import { getStorage } from "@/lib/r2/client";
 import { buildR2Key } from "@/lib/r2/keys";
@@ -215,41 +216,27 @@ export async function POST(req: NextRequest) {
 
       // Text fingerprint Level 3 (Spec 28) — try extract text via pdfjs
       let textFingerprint: string | null = null;
-      try {
-        // Use pdfjs-serverless to extract text in Workers
-        const pdfjs: any = await import("pdfjs-serverless");
-        const loadingTask = pdfjs.getDocument({ data: buf, verbosity: 0 });
-        const pdf = await loadingTask.promise;
-        let rawText = "";
-        const maxPages = Math.min(pdf.numPages, 5);
-        for (let i = 1; i <= maxPages; i++) {
-          const page = await pdf.getPage(i);
-          const content = await page.getTextContent();
-          const strings = content.items.map((it: any) => (it.str ? it.str : "")).join(" ");
-          rawText += strings + " ";
+      const extracted = await extractPdfText(buf);
+      if (extracted.error) logger.warn("text_extraction_failed", { filename: originalName, error: extracted.error.slice(0, 200) });
+      if (extracted.text.trim().length > 50) {
+        textFingerprint = fingerprintFromText(extracted.text);
+        // Same text as a paper with a different identity → likely a mislabelled duplicate. Same identity is fine (another scan).
+        const existingByText = await db
+          .select({ paperId: paperFiles.paperId })
+          .from(paperFiles)
+          .innerJoin(papers, eq(paperFiles.paperId, papers.id))
+          .where(and(eq(paperFiles.textFingerprint, textFingerprint), eq(papers.status, "active")))
+          .limit(1);
+        if (existingByText.length > 0 && existingByText[0].paperId !== paperId) {
+          if (paperCreated) await db.delete(papers).where(eq(papers.id, paperId)).catch(() => {});
+          results.push({
+            filename: originalName,
+            status: "duplicate",
+            paperId: existingByText[0].paperId,
+            message: "This looks like a paper we already have (same text), filed under different details. Check the year, semester and type.",
+          });
+          continue;
         }
-        if (rawText.trim().length > 50) {
-          textFingerprint = fingerprintFromText(rawText);
-          // Check for near-duplicate via text fingerprint (different scan, same content)
-          const existingByText = await db.select().from(paperFiles).where(eq(paperFiles.textFingerprint, textFingerprint)).limit(1);
-          if (existingByText.length > 0) {
-            // Same text as a paper with a different identity → likely a mislabelled duplicate. Same identity is fine (another scan).
-            const existingPaperForText = await db.select().from(papers).where(eq(papers.id, existingByText[0].paperId)).limit(1);
-            if (existingPaperForText[0] && existingPaperForText[0].id !== paperId) {
-              results.push({
-                filename: originalName,
-                status: "duplicate",
-                paperId: existingPaperForText[0].id,
-                message: "Possible duplicate — text fingerprint matches existing paper.",
-                duplicatePaper: existingPaperForText[0],
-              });
-              continue;
-            }
-          }
-        }
-      } catch (e) {
-        // Text extraction failed — likely a scanned PDF without a text layer
-        // (perceptual hashing for scans is a future level-4 check)
       }
 
       // An existing paper with a working file keeps it (and its uploader's credit). A new copy is stored
@@ -353,12 +340,13 @@ export async function POST(req: NextRequest) {
   }
 
   const added = results.filter((r) => r.status === "added").length;
-  const duplicates = results.filter((r) => r.status === "duplicate" || r.status === "alternate").length;
+  const duplicates = results.filter((r) => r.status === "duplicate").length;
+  const backups = results.filter((r) => r.status === "alternate").length;
   const errors = results.filter((r) => r.status === "error").length;
 
   return NextResponse.json({
     results,
-    summary: { total: files.length, added, duplicates, errors },
-    message: `Thank you for contributing to NustWeShare ❤️ Papers uploaded: ${files.length} Successfully added: ${added} Potential duplicates: ${duplicates}`,
+    summary: { total: files.length, added, backups, duplicates, errors },
+    message: `Thank you for contributing to NustWeShare ❤️ Papers uploaded: ${files.length} · Added: ${added} · Kept as backup: ${backups} · Duplicates: ${duplicates}`,
   });
 }

@@ -7,6 +7,9 @@ import { systemState } from "@/db/schema/system_state";
 import { getUserFromRequest } from "@/lib/auth/current";
 import { handleMissingFile, storedFileExists } from "@/lib/papers/moderation";
 import { jsonError } from "@/lib/http";
+import { getStorage } from "@/lib/r2/client";
+import { extractPdfText } from "@/lib/pdf/extractText";
+import { fingerprintFromText } from "@/lib/duplicates/textFingerprint";
 
 export const dynamic = "force-dynamic";
 
@@ -18,7 +21,7 @@ export async function POST(req: NextRequest) {
   const limit = Math.min(Number(req.nextUrl.searchParams.get("limit")) || 300, 1000);
   const db = getDb();
   const rows = await db
-    .select({ paperId: papers.id, key: paperFiles.r2ObjectKey })
+    .select({ paperId: papers.id, fileId: paperFiles.id, key: paperFiles.r2ObjectKey, fp: paperFiles.textFingerprint })
     .from(papers)
     .innerJoin(paperFiles, and(eq(paperFiles.paperId, papers.id), eq(paperFiles.isCanonical, true)))
     .where(eq(papers.status, "active"))
@@ -26,15 +29,28 @@ export async function POST(req: NextRequest) {
     .limit(limit);
   const hidden: string[] = [];
   let checked = 0;
+  let fingerprinted = 0;
+  const storage = getStorage();
   for (let i = 0; i < rows.length; i += 10) {
     const batch = rows.slice(i, i + 10);
     const results = await Promise.all(batch.map(async (r) => ({ r, ok: await storedFileExists(r.key) })));
     for (const { r, ok } of results) {
       checked++;
       if (!ok && (await handleMissingFile(r.paperId))) hidden.push(r.paperId);
+      // Backfill text fingerprints (near-duplicate detection) for files uploaded before it worked; capped per run
+      if (ok && !r.fp && fingerprinted < 40) {
+        const bytes = await storage.get(r.key);
+        if (bytes) {
+          const { text } = await extractPdfText(bytes);
+          if (text.trim().length > 50) {
+            await db.update(paperFiles).set({ textFingerprint: fingerprintFromText(text) }).where(eq(paperFiles.id, r.fileId));
+            fingerprinted++;
+          }
+        }
+      }
     }
   }
-  const result = { checked, hidden: hidden.length, hiddenIds: hidden, checkedAt: new Date().toISOString(), by: user.username };
+  const result = { checked, fingerprinted, hidden: hidden.length, hiddenIds: hidden, checkedAt: new Date().toISOString(), by: user.username };
   await db
     .insert(systemState)
     .values({ key: "integrity_scan", value: result })

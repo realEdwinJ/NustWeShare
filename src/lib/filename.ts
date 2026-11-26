@@ -5,6 +5,8 @@ export interface FilenameSuggestion {
   assessmentType?: string;
   assessmentNumber?: number | null;
   moduleCode?: string;
+  /** Only set when the filename says so explicitly (S1, Sem2, Semester 1, "second semester"). */
+  semester?: 1 | 2;
   confidence: "high" | "medium" | "low";
 }
 
@@ -63,5 +65,18 @@ export function parseFilename(filename: string): FilenameSuggestion {
     assessmentNumber = null; // optional
   }
 
-  return { year, assessmentType, assessmentNumber, moduleCode, confidence };
+  return { year, assessmentType, assessmentNumber, moduleCode, semester: parseSemester(filename), confidence };
+}
+
+/**
+ * Semester from an explicit token only. Module codes end in "S" and years start with "2", so "MCI511S_2024"
+ * must NOT read as semester 2 — the token has to stand alone (S1, s2, Sem1, Sem-2, Semester 1, "second semester").
+ */
+export function parseSemester(filename: string): 1 | 2 | undefined {
+  const base = filename.replace(/\.pdf$/i, "");
+  const m = base.match(/(?:^|[_\s.\-()])(?:s|sem|semester)[_\s\-]?([12])(?=$|[_\s.\-()])/i);
+  if (m) return Number(m[1]) as 1 | 2;
+  if (/(?:^|[_\s\-])(first|1st)[_\s\-]?sem/i.test(base)) return 1;
+  if (/(?:^|[_\s\-])(second|2nd)[_\s\-]?sem/i.test(base)) return 2;
+  return undefined;
 }

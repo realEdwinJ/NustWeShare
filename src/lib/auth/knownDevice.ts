@@ -6,19 +6,20 @@ import { createHmac, timingSafeEqual } from "crypto";
 export const KNOWN_DEVICE_COOKIE = "kd";
 const MAX_AGE = 365 * 24 * 60 * 60;
 
-function sig(userId: string, secret: string) {
-  return createHmac("sha256", secret).update(`known-device:${userId}`).digest("base64url");
+// Bound to the account's session version: a PIN reset/change or "sign out everywhere" revokes every known device.
+function sig(userId: string, version: number, secret: string) {
+  return createHmac("sha256", secret).update(`known-device:${userId}:${version}`).digest("base64url");
 }
 
 /** Cookie value holds up to 5 accounts used on this device: "<userId>.<sig>|…" */
-export function addKnownDevice(current: string | undefined, userId: string, secret: string): string {
+export function addKnownDevice(current: string | undefined, userId: string, version: number, secret: string): string {
   const entries = (current ?? "").split("|").filter((e) => e && !e.startsWith(`${userId}.`));
-  return [`${userId}.${sig(userId, secret)}`, ...entries].slice(0, 5).join("|");
+  return [`${userId}.${sig(userId, version, secret)}`, ...entries].slice(0, 5).join("|");
 }
 
-export function isKnownDevice(current: string | undefined, userId: string, secret: string): boolean {
+export function isKnownDevice(current: string | undefined, userId: string, version: number, secret: string): boolean {
   if (!current) return false;
-  const expected = Buffer.from(sig(userId, secret));
+  const expected = Buffer.from(sig(userId, version, secret));
   return current.split("|").some((e) => {
     const [id, s] = e.split(".");
     if (id !== userId || !s) return false;

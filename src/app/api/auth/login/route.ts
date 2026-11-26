@@ -47,7 +47,7 @@ export async function POST(req: NextRequest) {
     const a0 = (agg.rows as any[])[0] ?? {};
     const { getEnv } = await import("@/lib/env");
     const secret = getEnv().APP_SECRET;
-    const knownDevice = isKnownDevice(req.cookies.get(KNOWN_DEVICE_COOKIE)?.value, user.id, secret);
+    const knownDevice = isKnownDevice(req.cookies.get(KNOWN_DEVICE_COOKIE)?.value, user.id, user.sessionVersion ?? 0, secret);
     if (Number(a0.nets) >= 3 && Number(a0.fails) >= 15 && !knownDevice) {
       return jsonError(
         "PIN_LOCKED",
@@ -75,7 +75,7 @@ export async function POST(req: NextRequest) {
     const res = NextResponse.json({ data: { id: user.id, username: user.username, displayName: user.displayName } });
     const remember = body.remember !== false;
     res.cookies.set(SESSION_COOKIE, token, remember ? sessionCookieOptions() : { ...sessionCookieOptions(), maxAge: undefined as any });
-    res.cookies.set(KNOWN_DEVICE_COOKIE, addKnownDevice(req.cookies.get(KNOWN_DEVICE_COOKIE)?.value, user.id, secret), knownDeviceCookieOptions);
+    res.cookies.set(KNOWN_DEVICE_COOKIE, addKnownDevice(req.cookies.get(KNOWN_DEVICE_COOKIE)?.value, user.id, user.sessionVersion ?? 0, secret), knownDeviceCookieOptions);
     return res;
   } catch (e) {
     console.error("[api/auth/login]", e);

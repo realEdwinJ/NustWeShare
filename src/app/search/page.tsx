@@ -5,6 +5,10 @@ import { PageHeader } from "@/components/ui/page-header";
 import { EmptyState } from "@/components/ui/empty-state";
 import { SearchBar } from "@/components/search/SearchBar";
 import { searchCatalog } from "@/lib/search";
+import { hasPaperFilters, moduleHref } from "@/lib/searchIntent";
+import { TYPE_LABEL } from "@/lib/papers/format";
+import { TypeBadge } from "@/components/papers/ModulePapers";
+import { FileText } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -52,12 +56,47 @@ export default async function SearchPage({ searchParams }: { searchParams: Promi
         </div>
       ) : data === null ? (
         <EmptyState className="mt-8" title="Search is temporarily unavailable" description="Please try again in a moment." />
-      ) : data.modules.length === 0 && data.programmes.length === 0 ? (
+      ) : data.modules.length === 0 && data.programmes.length === 0 && data.papers.length === 0 ? (
         <EmptyState className="mt-8" icon={<SearchX />} title={`No results for “${term}”`} description={onlyWithPapers ? "No matching module has papers yet." : "Check the module code (e.g. MCI511S) or try fewer words."}>
           {onlyWithPapers && <Link href={href(false)} className="text-sm font-medium text-info hover:underline">Show all modules</Link>}
         </EmptyState>
       ) : (
         <div className="mt-8 space-y-10">
+          {hasPaperFilters(data.intent) && data.modules.length > 0 && (
+            <section aria-labelledby="papers-h">
+              <div className="mb-3 flex flex-wrap items-center gap-3">
+                <h2 id="papers-h" className="flex items-center gap-2 text-base font-semibold">
+                  <FileText className="size-4 text-info" /> Papers
+                  <span className="font-normal text-muted-foreground">
+                    {[data.intent.type ? TYPE_LABEL[data.intent.type] + (data.intent.number ? ` ${data.intent.number}` : "") : null, data.intent.year, data.intent.semester ? `Semester ${data.intent.semester}` : null].filter(Boolean).join(" · ")}
+                  </span>
+                </h2>
+                <Link href={moduleHref(data.modules[0].code, data.intent)} className="ml-auto text-sm font-medium text-info hover:underline">
+                  Open {data.modules[0].code} with these filters →
+                </Link>
+              </div>
+              {data.papers.length === 0 ? (
+                <div className="rounded-2xl border border-dashed px-5 py-6 text-sm text-muted-foreground">
+                  No matching {data.modules[0].code} paper yet.{" "}
+                  <Link href={moduleHref(data.modules[0].code)} className="font-medium text-info hover:underline">See all {data.modules[0].code} papers</Link> or request it there.
+                </div>
+              ) : (
+                <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
+                  {data.papers.map((p) => (
+                    <Link key={p.id} href={`/papers/${p.id}`} className="flex items-center gap-3 rounded-xl border bg-card px-4 py-3 hover:border-input hover:shadow-[var(--shadow-soft)]">
+                      <span className="font-mono text-sm font-semibold">{p.moduleCode}</span>
+                      <TypeBadge type={p.assessmentType} number={p.assessmentNumber} />
+                      <span className="text-sm tabular-nums text-muted-foreground">
+                        {p.academicYear} · S{p.semester}
+                      </span>
+                      <span className="ml-auto text-xs text-muted-foreground">{p.pageCount ? `${p.pageCount} pp` : ""}</span>
+                    </Link>
+                  ))}
+                </div>
+              )}
+            </section>
+          )}
+          {data.modules.length > 0 && (
           <section>
             <div className="mb-3 flex flex-wrap items-center gap-3">
               <h2 className="flex items-center gap-2 text-base font-semibold">
@@ -70,21 +109,22 @@ export default async function SearchPage({ searchParams }: { searchParams: Promi
             </div>
             <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
               {data.modules.map((m) => (
-                <Link key={m.code} href={`/modules/${m.code.toLowerCase()}`} className="group rounded-xl border bg-card p-4 hover:border-input hover:shadow-[var(--shadow-soft)]">
+                <Link key={m.code} href={moduleHref(m.code, data.intent)} className="group rounded-xl border bg-card p-4 hover:border-input hover:shadow-[var(--shadow-soft)]">
                   <div className="flex items-center justify-between gap-2">
-                    <span className="font-mono text-sm font-semibold"><Hl text={m.code} q={term} /></span>
+                    <span className="font-mono text-sm font-semibold"><Hl text={m.code} q={data.intent.code ?? data.intent.rest ?? term} /></span>
                     {m.paperCount > 0 ? (
                       <span className="rounded-full bg-success-soft px-2 py-0.5 text-[11px] font-medium text-success">{m.paperCount} paper{m.paperCount === 1 ? "" : "s"}</span>
                     ) : (
                       <span className="text-[11px] text-muted-foreground">No papers yet</span>
                     )}
                   </div>
-                  <p className="mt-1 text-sm group-hover:underline"><Hl text={m.name} q={term} /></p>
+                  <p className="mt-1 text-sm group-hover:underline"><Hl text={m.name} q={data.intent.rest || term} /></p>
                   {m.departmentName && <p className="mt-1.5 truncate text-xs text-muted-foreground">{m.facultyCode} · {m.departmentName.replace(/^Department of /, "")}</p>}
                 </Link>
               ))}
             </div>
           </section>
+          )}
           {data.programmes.length > 0 && (
             <section>
               <h2 className="mb-3 flex items-center gap-2 text-base font-semibold">

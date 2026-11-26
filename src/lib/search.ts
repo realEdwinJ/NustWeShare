@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import { getDb } from "@/lib/db";
+import { hasPaperFilters, parseSearchIntent } from "@/lib/searchIntent";
 
 export type SearchModule = { id: string; code: string; name: string; paperCount: number; departmentName: string | null; facultyCode: string | null };
 export type SearchProgramme = { code: string; name: string; level: string; href: string };
@@ -12,7 +13,42 @@ function escapeLike(q: string) {
  * Ranked module + programme search (Spec 37): exact code > code prefix > name prefix > word match > fuzzy (pg_trgm).
  * Multi-word queries match every word ("data struct" → "Data Structures").
  */
+export type SearchPaper = { id: string; moduleCode: string; academicYear: number; semester: number; assessmentType: string; assessmentNumber: number | null; pageCount: number | null };
+
+/**
+ * Understands "MCI511S 2024 exam"-style queries: modules are matched on the code (or the remaining words),
+ * and when the query names a year/type/semester the matching papers are returned directly.
+ */
 export async function searchCatalog(raw: string, opts: { moduleLimit?: number; programmeLimit?: number; onlyWithPapers?: boolean } = {}) {
+  const intent = parseSearchIntent(raw.slice(0, 100));
+  const text = intent.code ?? (intent.rest || (hasPaperFilters(intent) ? "" : raw));
+  const base = text ? await searchText(text, opts) : { modules: [] as SearchModule[], programmes: [] as SearchProgramme[] };
+  let papers: SearchPaper[] = [];
+  if (hasPaperFilters(intent) && base.modules.length) {
+    const target = intent.code ? base.modules.filter((m) => m.code === intent.code) : base.modules.slice(0, 3);
+    if (target.length) {
+      const db = getDb();
+      const res = await db.execute(sql`
+        SELECT p.id, m.code AS module_code, p.academic_year, p.semester, p.assessment_type, p.assessment_number, pf.page_count
+        FROM papers p JOIN modules m ON m.id = p.module_id
+        LEFT JOIN paper_files pf ON pf.paper_id = p.id AND pf.is_canonical
+        WHERE p.status = 'active' AND p.module_id IN (${sql.join(target.map((m) => sql`${m.id}`), sql`, `)})
+          ${intent.year ? sql`AND p.academic_year = ${intent.year}` : sql``}
+          ${intent.type ? sql`AND p.assessment_type = ${intent.type}` : sql``}
+          ${intent.number ? sql`AND p.assessment_number = ${intent.number}` : sql``}
+          ${intent.semester ? sql`AND p.semester = ${intent.semester}` : sql``}
+        ORDER BY p.academic_year DESC, p.semester, p.assessment_type, p.assessment_number NULLS FIRST
+        LIMIT 24`);
+      papers = (res.rows as any[]).map((r) => ({
+        id: r.id, moduleCode: r.module_code, academicYear: Number(r.academic_year), semester: Number(r.semester),
+        assessmentType: r.assessment_type, assessmentNumber: r.assessment_number == null ? null : Number(r.assessment_number), pageCount: r.page_count == null ? null : Number(r.page_count),
+      }));
+    }
+  }
+  return { ...base, papers, intent };
+}
+
+async function searchText(raw: string, opts: { moduleLimit?: number; programmeLimit?: number; onlyWithPapers?: boolean }) {
   const q = raw.trim().slice(0, 100);
   if (!q) return { modules: [] as SearchModule[], programmes: [] as SearchProgramme[] };
   const db = getDb();
