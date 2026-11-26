@@ -16,8 +16,8 @@ export function AdminClient({ lastScan }: { lastScan: { checked: number; hidden:
   const [rows, setRows] = useState<Row[] | null>(null);
   const [filter, setFilter] = useState<"open" | "removed" | "backups">("open");
   const [backups, setBackups] = useState<Backup[] | null>(null);
-  const describe = (r: { checked: number; hidden: number; checkedAt: string; by?: string; fingerprinted?: number }) =>
-    `Last storage check ${timeAgo(r.checkedAt)}${r.by ? ` by @${r.by}` : ""}: ${r.checked} files checked, ${r.hidden ? `${r.hidden} paper(s) hidden for missing files` : "all present"}${r.fingerprinted ? `, ${r.fingerprinted} duplicate fingerprint(s) added` : ""}.`;
+  const describe = (r: { checked: number; hidden: number; checkedAt: string; by?: string; fingerprinted?: number; deadBackups?: number }) =>
+    `Last storage check ${timeAgo(r.checkedAt)}${r.by ? ` by @${r.by}` : ""}: ${r.checked} files checked, ${r.hidden ? `${r.hidden} paper(s) hidden for missing files` : "all present"}${r.fingerprinted ? `, ${r.fingerprinted} duplicate fingerprint(s) added` : ""}${r.deadBackups ? `, ${r.deadBackups} broken backup(s) removed` : ""}.`;
   const [scanResult, setScanResult] = useState<string | null>(lastScan ? describe(lastScan) : "Storage hasn't been checked yet.");
   useEffect(() => {
     if (filter !== "backups" || backups) return;

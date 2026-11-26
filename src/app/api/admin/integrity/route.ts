@@ -49,9 +49,18 @@ export async function POST(req: NextRequest) {
     .where(and(isNull(paperFiles.textFingerprint), eq(papers.status, "active")))
     .limit(40);
   let unreadable = 0;
+  let deadBackups = 0;
   for (const f of missingFp) {
     const bytes = await storage.get(f.key);
-    if (!bytes) continue;
+    if (!bytes) {
+      // A backup whose stored file is gone can never be promoted — drop the dead record
+      const removed = await db
+        .delete(paperFiles)
+        .where(and(eq(paperFiles.id, f.id), eq(paperFiles.isCanonical, false)))
+        .returning({ id: paperFiles.id });
+      deadBackups += removed.length;
+      continue;
+    }
     const { text } = await extractPdfText(bytes);
     if (text.trim().length > 50) {
       await db.update(paperFiles).set({ textFingerprint: fingerprintFromText(text) }).where(eq(paperFiles.id, f.id));
@@ -59,7 +68,7 @@ export async function POST(req: NextRequest) {
     } else unreadable++; // scanned image without a text layer
   }
 
-  const result = { checked, unreadable, fingerprinted, hidden: hidden.length, hiddenIds: hidden, checkedAt: new Date().toISOString(), by: user.username };
+  const result = { checked, unreadable, deadBackups, fingerprinted, hidden: hidden.length, hiddenIds: hidden, checkedAt: new Date().toISOString(), by: user.username };
   await db
     .insert(systemState)
     .values({ key: "integrity_scan", value: result })

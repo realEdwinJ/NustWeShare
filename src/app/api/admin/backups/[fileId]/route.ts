@@ -4,6 +4,7 @@ import { getDb } from "@/lib/db";
 import { paperFiles } from "@/db/schema/paper_files";
 import { getUserFromRequest } from "@/lib/auth/current";
 import { setCanonical } from "@/lib/papers/canonical";
+import { storedFileExists } from "@/lib/papers/moderation";
 import { getStorage } from "@/lib/r2/client";
 import { isUuid, jsonError, readJson } from "@/lib/http";
 
@@ -21,6 +22,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ fil
   const [f] = await db.select().from(paperFiles).where(eq(paperFiles.id, fileId)).limit(1);
   if (!f) return jsonError("NOT_FOUND", "File not found.", 404);
   if (body?.action === "promote") {
+    if (!(await storedFileExists(f.r2ObjectKey))) {
+      return jsonError("FILE_MISSING", "This backup's file is missing from storage, so it can't become the main file.", 409);
+    }
     await setCanonical(f.paperId, f.id);
     return NextResponse.json({ data: { ok: true } });
   }
