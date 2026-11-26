@@ -1,104 +1,75 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { asc, eq } from "drizzle-orm";
 import { Container } from "@/components/ui/container";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Breadcrumbs, PageHeader } from "@/components/ui/page-header";
+import { EmptyState } from "@/components/ui/empty-state";
+import { getDb } from "@/lib/db";
+import { programmes } from "@/db/schema/programmes";
+import { modules } from "@/db/schema/modules";
+import { programmeModules } from "@/db/schema/programme_modules";
+import { departments } from "@/db/schema/departments";
+import { getPaperCountsForModules } from "@/lib/papers/queries";
+import { ProgrammeModules } from "./ProgrammeModules";
 
 export const dynamic = "force-dynamic";
 
-export default async function ProgrammeModulesPage({ params }: { params: Promise<{ facultySlug: string; deptSlug: string; programmeCode: string }> }) {
-  const { facultySlug, deptSlug, programmeCode } = await params;
-  const code = programmeCode.trim().toUpperCase();
+export async function generateMetadata({ params }: { params: Promise<{ programmeCode: string }> }) {
+  const { programmeCode } = await params;
   try {
-    const { getDb } = await import("@/lib/db");
-    const { programmes } = await import("@/db/schema/programmes");
-    const { modules } = await import("@/db/schema/modules");
-    const { programmeModules } = await import("@/db/schema/programme_modules");
-    const { eq, asc } = await import("drizzle-orm");
-    const db = getDb();
-
-    const prog = await db.select().from(programmes).where(eq(programmes.code, code)).limit(1);
-    if (prog.length === 0) return notFound();
-
-    const rows = await db
-      .select({ code: modules.code, name: modules.name, yearLevel: programmeModules.yearLevel, semester: programmeModules.semester })
-      .from(programmeModules)
-      .innerJoin(modules, eq(programmeModules.moduleId, modules.id))
-      .where(eq(programmeModules.programmeId, prog[0].id))
-      .orderBy(asc(programmeModules.yearLevel), asc(programmeModules.semester), asc(modules.code));
-
-    // Group by yearLevel
-    const byYear = new Map<number | string, typeof rows>();
-    for (const r of rows) {
-      const key = r.yearLevel ?? "Postgraduate";
-      if (!byYear.has(key)) byYear.set(key, []);
-      byYear.get(key)!.push(r);
-    }
-
-    return (
-      <Container className="py-8">
-        <div className="text-sm text-muted-foreground">
-          <Link href="/browse" className="hover:underline">
-            Browse
-          </Link>{" "}
-          /{" "}
-          <Link href={`/browse/${facultySlug}`} className="hover:underline">
-            {facultySlug.toUpperCase()}
-          </Link>{" "}
-          /{" "}
-          <Link href={`/browse/${facultySlug}/${deptSlug}`} className="hover:underline">
-            {deptSlug}
-          </Link>{" "}
-          / {code}
-        </div>
-        <h1 className="mt-2 text-xl font-bold tracking-tight">{prog[0].name}</h1>
-        <p className="text-sm text-muted-foreground">
-          {prog[0].code} · NQF {prog[0].nqfLevel} · {rows.length} modules
-        </p>
-
-        {rows.length === 0 ? (
-          <Card className="mt-6">
-            <CardContent className="py-8 text-center text-sm text-muted-foreground">No modules found for this programme yet.</CardContent>
-          </Card>
-        ) : (
-          <div className="mt-6 space-y-6">
-            {[...byYear.entries()]
-              .sort((a, b) => {
-                if (a[0] === "Postgraduate") return 1;
-                if (b[0] === "Postgraduate") return -1;
-                return Number(a[0]) - Number(b[0]);
-              })
-              .map(([year, mods]) => (
-                <Card key={String(year)}>
-                  <CardHeader>
-                    <CardTitle className="text-base">{year === "Postgraduate" ? "Postgraduate" : `Year ${year}`}</CardTitle>
-                    <CardDescription>{mods.length} modules</CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                      {mods.map((m) => (
-                        <Link key={m.code} href={`/modules/${m.code.toLowerCase()}`} className="group rounded-xl border px-3 py-3 hover:bg-accent">
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="font-mono text-sm font-semibold">{m.code}</span>
-                            {m.semester && <Badge variant="outline">Sem {m.semester}</Badge>}
-                          </div>
-                          <p className="mt-1 text-sm font-medium group-hover:underline line-clamp-2">{m.name}</p>
-                        </Link>
-                      ))}
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-          </div>
-        )}
-      </Container>
-    );
-  } catch (e) {
-    console.error("[programme modules]", e);
-    return (
-      <Container className="py-8">
-        <p className="text-sm text-muted-foreground">Could not load modules.</p>
-      </Container>
-    );
+    const [p] = await getDb().select({ name: programmes.name }).from(programmes).where(eq(programmes.code, programmeCode.toUpperCase())).limit(1);
+    return { title: p ? `${p.name} — modules & past papers` : "Programme" };
+  } catch {
+    return { title: "Programme" };
   }
+}
+
+export default async function ProgrammePage({ params }: { params: Promise<{ facultySlug: string; deptSlug: string; programmeCode: string }> }) {
+  const { facultySlug, deptSlug, programmeCode } = await params;
+  const db = getDb();
+  const [prog] = await db.select().from(programmes).where(eq(programmes.code, programmeCode.toUpperCase())).limit(1);
+  if (!prog) notFound();
+  const [dept] = await db.select().from(departments).where(eq(departments.id, prog.departmentId)).limit(1);
+  const rows = await db
+    .select({ id: modules.id, code: modules.code, name: modules.name, yearLevel: programmeModules.yearLevel, semester: programmeModules.semester, isCore: programmeModules.isCore })
+    .from(programmeModules)
+    .innerJoin(modules, eq(programmeModules.moduleId, modules.id))
+    .where(eq(programmeModules.programmeId, prog.id))
+    .orderBy(asc(programmeModules.yearLevel), asc(programmeModules.semester), asc(modules.code));
+  const seen = new Set<string>();
+  const unique = rows.filter((r) => (seen.has(r.code) ? false : (seen.add(r.code), true)));
+  const counts = await getPaperCountsForModules(unique.map((r) => r.id));
+  const list = unique.map((r) => ({ code: r.code, name: r.name, yearLevel: r.yearLevel, semester: r.semester, isCore: r.isCore, papers: counts.get(r.id) ?? 0 }));
+  const withPapers = list.filter((m) => m.papers > 0).length;
+
+  return (
+    <Container className="py-8 sm:py-10">
+      <Breadcrumbs
+        items={[
+          { href: "/browse", label: "Browse" },
+          { href: `/browse/${facultySlug}`, label: facultySlug.toUpperCase() },
+          { href: `/browse/${facultySlug}/${deptSlug}`, label: dept?.name ?? deptSlug },
+          { label: prog.code },
+        ]}
+      />
+      <PageHeader
+        className="mt-4"
+        eyebrow={
+          <div className="flex flex-wrap gap-1.5">
+            <Badge variant="outline" className="font-mono">{prog.code}</Badge>
+            <Badge variant="secondary" className="capitalize">{prog.level}</Badge>
+            {prog.nqfLevel && <Badge variant="outline">NQF {prog.nqfLevel}</Badge>}
+          </div>
+        }
+        title={prog.name}
+        description={`${list.length} modules · ${withPapers} with past papers`}
+      />
+      <div className="mt-8">{list.length === 0 ? <EmptyState title="No modules listed for this programme yet" /> : <ProgrammeModules modules={list} />}</div>
+      <p className="mt-8 text-sm text-muted-foreground">
+        Tip: open a module and tap <span className="font-medium text-foreground">Follow</span> to get it on your home page.{" "}
+        <Link href="/settings#study" className="text-info hover:underline">Set this as your programme</Link>
+      </p>
+    </Container>
+  );
 }

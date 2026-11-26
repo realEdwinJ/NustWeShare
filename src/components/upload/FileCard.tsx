@@ -1,148 +1,105 @@
 "use client";
 
-import { Input } from "@/components/ui/input";
-import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { parseFilename } from "@/lib/filename";
+import Link from "next/link";
+import { AlertCircle, CheckCircle2, Copy, FileText, Loader2, X } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { Select } from "@/components/ui/input";
+import { Progress } from "@/components/ui/progress";
+import { ASSESSMENT_TYPES, TYPE_LABEL, formatBytes, typeHasNumber } from "@/lib/papers/format";
 
-type FileMeta = {
+export type UploadState = "ready" | "uploading" | "added" | "duplicate" | "error";
+export type FileMeta = {
+  key: string;
   file: File;
-  assessmentType: string | null;
+  assessmentType: string;
   assessmentNumber: number | null;
-  academicYear: number | null;
-  semester: number | null;
-  skip: boolean;
+  academicYear: number;
+  semester: number;
+  suggested: boolean;
+  state: UploadState;
+  progress: number;
+  message?: string;
+  paperId?: string;
 };
 
-const TYPES = ["TEST", "EXAM", "SUPPLEMENTARY", "QUIZ", "ASSIGNMENT", "LAB", "TUTORIAL"] as const;
-const currentYear = new Date().getFullYear();
-const YEARS = Array.from({ length: 12 }, (_, i) => currentYear + 1 - i); // e.g., 2027 down to 2016
+const thisYear = new Date().getFullYear();
+const YEARS = Array.from({ length: 16 }, (_, i) => thisYear + 1 - i);
 
-export function FileCard({
-  meta,
-  onChange,
-  onRemove,
-}: {
-  meta: FileMeta;
-  onChange: (patch: Partial<FileMeta>) => void;
-  onRemove: () => void;
-}) {
-  const suggestion = parseFilename(meta.file.name);
-  const showSkipHint = meta.skip;
-
-  // Auto-fill from filename parsing if fields are null and not skipped
-  // This is suggestion only, user can correct
-  const displayType = meta.assessmentType ?? suggestion.assessmentType ?? "";
-  const displayYear = meta.academicYear ?? suggestion.year ?? null;
-
-  const isExamOrSupp = displayType === "EXAM" || displayType === "SUPPLEMENTARY";
-
+export function FileCard({ meta, onChange, onRemove, onApplyAll, canApplyAll }: { meta: FileMeta; onChange: (p: Partial<FileMeta>) => void; onRemove: () => void; onApplyAll: () => void; canApplyAll: boolean }) {
+  const locked = meta.state !== "ready" && meta.state !== "error";
+  const needsNumber = typeHasNumber(meta.assessmentType);
   return (
-    <Card className={meta.skip ? "opacity-80" : ""}>
-      <CardContent className="pt-6">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0 flex-1">
-            <p className="font-mono text-sm font-semibold truncate" title={meta.file.name}>
-              {meta.file.name}
-            </p>
-            <p className="text-xs text-muted-foreground">
-              {(meta.file.size / 1024).toFixed(0)} KB · {meta.file.type || "application/pdf"}
-              {suggestion.confidence === "high" && <span className="ml-2 text-emerald-600">Suggested: {suggestion.assessmentType} {suggestion.year}</span>}
-            </p>
-          </div>
-          <button onClick={onRemove} className="text-xs font-medium hover:underline text-muted-foreground">
-            Remove
-          </button>
+    <div className={cn("rounded-2xl border bg-card p-4", meta.state === "added" && "border-success/40 bg-success-soft/30", meta.state === "error" && "border-destructive/40", meta.state === "duplicate" && "border-warning/40")}>
+      <div className="flex items-start gap-3">
+        <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-destructive-soft text-destructive">
+          <FileText className="size-5" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-medium" title={meta.file.name}>{meta.file.name}</p>
+          <p className="text-xs text-muted-foreground">
+            {formatBytes(meta.file.size)}
+            {meta.suggested && meta.state === "ready" && <span className="ml-2 text-success">✓ details read from filename — please check</span>}
+          </p>
         </div>
+        {meta.state === "uploading" && <Loader2 className="size-5 animate-spin text-info" aria-label="Uploading" />}
+        {meta.state === "added" && <CheckCircle2 className="size-5 text-success" aria-label="Added" />}
+        {meta.state === "duplicate" && <Copy className="size-5 text-warning" aria-label="Duplicate" />}
+        {meta.state === "error" && <AlertCircle className="size-5 text-destructive" aria-label="Error" />}
+        {!locked && (
+          <button onClick={onRemove} className="rounded-lg p-1 text-muted-foreground hover:bg-accent hover:text-foreground" aria-label={`Remove ${meta.file.name}`}>
+            <X className="size-4" />
+          </button>
+        )}
+      </div>
 
-        {meta.skip ? (
-          <div className="mt-4 rounded-xl bg-muted/50 p-4">
-            <p className="text-sm">Skipped details — we&apos;ll keep it organized ❤️</p>
-            <p className="text-xs text-muted-foreground">Adding the year and paper type makes this paper much easier for other students to find.</p>
-            <button onClick={() => onChange({ skip: false })} className="mt-2 text-sm font-medium hover:underline">
-              Add details
+      {meta.state === "uploading" && <Progress value={meta.progress} className="mt-3" />}
+
+      {(meta.state === "ready" || meta.state === "error") && (
+        <div className="mt-4 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+          <label className="text-xs font-medium text-muted-foreground">
+            Type
+            <Select value={meta.assessmentType} onChange={(e) => onChange({ assessmentType: e.target.value, assessmentNumber: typeHasNumber(e.target.value) ? meta.assessmentNumber ?? 1 : null })} className="mt-1 h-10 text-sm text-foreground">
+              {ASSESSMENT_TYPES.map((t) => <option key={t} value={t}>{TYPE_LABEL[t]}</option>)}
+            </Select>
+          </label>
+          <label className="text-xs font-medium text-muted-foreground">
+            Number
+            <Select value={meta.assessmentNumber ?? ""} disabled={!needsNumber} onChange={(e) => onChange({ assessmentNumber: e.target.value ? Number(e.target.value) : null })} className="mt-1 h-10 text-sm text-foreground">
+              <option value="">{needsNumber ? "—" : "n/a"}</option>
+              {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => <option key={n} value={n}>{n}</option>)}
+            </Select>
+          </label>
+          <label className="text-xs font-medium text-muted-foreground">
+            Year
+            <Select value={meta.academicYear} onChange={(e) => onChange({ academicYear: Number(e.target.value) })} className="mt-1 h-10 text-sm text-foreground">
+              {YEARS.map((y) => <option key={y} value={y}>{y}</option>)}
+            </Select>
+          </label>
+          <label className="text-xs font-medium text-muted-foreground">
+            Semester
+            <Select value={meta.semester} onChange={(e) => onChange({ semester: Number(e.target.value) })} className="mt-1 h-10 text-sm text-foreground">
+              <option value={1}>Semester 1</option>
+              <option value={2}>Semester 2</option>
+            </Select>
+          </label>
+          {canApplyAll && (
+            <button onClick={onApplyAll} className="col-span-2 justify-self-start text-xs font-medium text-info hover:underline sm:col-span-4">
+              Apply year & semester to all files
             </button>
-          </div>
-        ) : (
-          <div className="mt-4 grid gap-3 sm:grid-cols-2">
-            <label className="text-sm">
-              <span className="font-medium">Type</span>
-              <select
-                value={meta.assessmentType ?? ""}
-                onChange={(e) => {
-                  const v = e.target.value || null;
-                  onChange({ assessmentType: v, assessmentNumber: v === "EXAM" || v === "SUPPLEMENTARY" ? null : meta.assessmentNumber });
-                }}
-                className="mt-1 flex h-10 w-full rounded-xl border border-input bg-background px-3 text-sm"
-              >
-                <option value="">Select type</option>
-                {TYPES.map((t) => (
-                  <option key={t} value={t}>
-                    {t.charAt(0) + t.slice(1).toLowerCase()}
-                  </option>
-                ))}
-              </select>
-            </label>
+          )}
+        </div>
+      )}
 
-            <label className="text-sm">
-              <span className="font-medium">Number {isExamOrSupp && <span className="text-muted-foreground">(not needed)</span>}</span>
-              <select
-                value={meta.assessmentNumber ?? ""}
-                onChange={(e) => onChange({ assessmentNumber: e.target.value ? parseInt(e.target.value, 10) : null })}
-                disabled={isExamOrSupp || !meta.assessmentType}
-                className="mt-1 flex h-10 w-full rounded-xl border border-input bg-background px-3 text-sm disabled:opacity-50"
-              >
-                <option value="">—</option>
-                {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => (
-                  <option key={n} value={n}>
-                    {n}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label className="text-sm">
-              <span className="font-medium">Year</span>
-              <select
-                value={meta.academicYear ?? ""}
-                onChange={(e) => onChange({ academicYear: e.target.value ? parseInt(e.target.value, 10) : null })}
-                className="mt-1 flex h-10 w-full rounded-xl border border-input bg-background px-3 text-sm"
-              >
-                <option value="">Select year</option>
-                {YEARS.map((y) => (
-                  <option key={y} value={y}>
-                    {y}
-                  </option>
-                ))}
-              </select>
-              {suggestion.year && !meta.academicYear && <span className="text-xs text-muted-foreground">Suggested: {suggestion.year}</span>}
-            </label>
-
-            <label className="text-sm">
-              <span className="font-medium">Semester</span>
-              <select
-                value={meta.semester ?? ""}
-                onChange={(e) => onChange({ semester: e.target.value ? parseInt(e.target.value, 10) : null })}
-                className="mt-1 flex h-10 w-full rounded-xl border border-input bg-background px-3 text-sm"
-              >
-                <option value="">Select semester</option>
-                <option value="1">Semester 1</option>
-                <option value="2">Semester 2</option>
-              </select>
-            </label>
-
-            <div className="sm:col-span-2 flex gap-2 pt-1">
-              <button onClick={() => onChange({ skip: true })} className="text-xs font-medium hover:underline text-muted-foreground">
-                Skip — Help keep NustWeShare organized ❤️
-              </button>
-            </div>
-          </div>
-        )}
-
-        {!meta.skip && (!meta.assessmentType || !meta.academicYear || !meta.semester) && (
-          <p className="mt-3 text-xs text-amber-600">Tip: Adding the year and paper type makes this paper much easier to find. You can skip if in a hurry.</p>
-        )}
-      </CardContent>
-    </Card>
+      {meta.message && meta.state !== "ready" && (
+        <p className={cn("mt-3 text-sm", meta.state === "error" ? "text-destructive" : meta.state === "duplicate" ? "text-warning" : "text-success")}>
+          {meta.message}{" "}
+          {meta.paperId && (
+            <Link href={`/papers/${meta.paperId}`} className="font-medium underline underline-offset-2">
+              {meta.state === "duplicate" ? "See existing paper" : "Open paper"}
+            </Link>
+          )}
+        </p>
+      )}
+    </div>
   );
 }

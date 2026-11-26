@@ -22,6 +22,7 @@ export const paperFiles = pgTable(
     perceptualHash: varchar("perceptual_hash", { length: 64 }), // pHash per Spec 29
     isCanonical: boolean("is_canonical").notNull().default(true),
     uploaderId: uuid("uploader_id").references(() => users.id, { onDelete: "set null" }), // null = ghost (Spec 24)
+    hideUploader: boolean("hide_uploader").notNull().default(false), // signed-in but shown as Anonymous
     uploadIpHash: varchar("upload_ip_hash", { length: 64 }), // for dedup/limit, hashed per Spec 52
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },

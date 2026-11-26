@@ -1,20 +1,19 @@
-import { Container } from "@/components/ui/container";
+import { Suspense } from "react";
+import { redirect } from "next/navigation";
+import { AuthShell } from "@/components/auth/AuthShell";
 import { RegisterForm } from "@/components/auth/AuthForm";
-import Link from "next/link";
+import { getCurrentUser } from "@/lib/auth/current";
 
-export const metadata = { title: "Create profile" };
+export const dynamic = "force-dynamic";
+export const metadata = { title: "Create a profile", robots: { index: false } };
 
-export default function RegisterPage() {
+export default async function RegisterPage() {
+  if (await getCurrentUser()) redirect("/dashboard");
   return (
-    <Container className="py-8 max-w-lg">
-      <h1 className="text-2xl font-bold tracking-tight">Create profile</h1>
-      <p className="mt-1 text-sm text-muted-foreground">Optional — you can always upload as Anonymous. No email, no OTP.</p>
-      <div className="mt-6">
+    <AuthShell title="Create your profile" subtitle="Optional — everything works without one. A profile adds credit for uploads, saved papers on every device, and module alerts.">
+      <Suspense>
         <RegisterForm />
-      </div>
-      <p className="mt-4 text-sm text-muted-foreground">
-        Already have a profile? <Link href="/login" className="underline">Login</Link>
-      </p>
-    </Container>
+      </Suspense>
+    </AuthShell>
   );
 }

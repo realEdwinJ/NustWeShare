@@ -1,20 +1,19 @@
-import { Container } from "@/components/ui/container";
+import { Suspense } from "react";
+import { redirect } from "next/navigation";
+import { AuthShell } from "@/components/auth/AuthShell";
 import { LoginForm } from "@/components/auth/AuthForm";
-import Link from "next/link";
+import { getCurrentUser } from "@/lib/auth/current";
 
-export const metadata = { title: "Login" };
+export const dynamic = "force-dynamic";
+export const metadata = { title: "Log in", robots: { index: false } };
 
-export default function LoginPage() {
+export default async function LoginPage() {
+  if (await getCurrentUser()) redirect("/dashboard");
   return (
-    <Container className="py-8 max-w-lg">
-      <h1 className="text-2xl font-bold tracking-tight">Login</h1>
-      <p className="mt-1 text-sm text-muted-foreground">Username + 5-digit PIN.</p>
-      <div className="mt-6">
+    <AuthShell title="Welcome back" subtitle="Log in with your username and PIN.">
+      <Suspense>
         <LoginForm />
-      </div>
-      <p className="mt-4 text-sm text-muted-foreground">
-        No profile? <Link href="/register" className="underline">Create one</Link> — or upload as ghost.
-      </p>
-    </Container>
+      </Suspense>
+    </AuthShell>
   );
 }

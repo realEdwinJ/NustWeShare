@@ -11,3 +11,5 @@ export * from "./users";
 export * from "./social_links";
 export * from "./reports";
 export * from "./contribution_stats";
+export * from "./bookmarks";
+export * from "./paper_requests";

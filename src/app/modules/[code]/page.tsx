@@ -1,160 +1,164 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { eq } from "drizzle-orm";
+import { Download, Eye, FileText, GraduationCap, Upload } from "lucide-react";
 import { Container } from "@/components/ui/container";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { buttonVariants } from "@/components/ui/button";
+import { Breadcrumbs } from "@/components/ui/page-header";
+import { ModulePapers, type ModulePaper } from "@/components/papers/ModulePapers";
+import { PaperRequests } from "@/components/papers/PaperRequests";
+import { SaveButton } from "@/components/papers/SaveButton";
+import { ShareButton } from "@/components/papers/ShareButton";
+import { getModuleByCode, getModuleProgrammes, listModulePapers } from "@/lib/papers/queries";
+import { compactNumber } from "@/lib/papers/format";
+import { getCurrentUser } from "@/lib/auth/current";
 
 export const dynamic = "force-dynamic";
 
 export async function generateMetadata({ params }: { params: Promise<{ code: string }> }) {
   const { code } = await params;
-  return { title: `${code.toUpperCase()} | NustWeShare` };
+  try {
+    const m = await getModuleByCode(code);
+    if (!m) return { title: "Module not found" };
+    return {
+      title: `${m.code} ${m.name} past papers`,
+      description: `Read and download ${m.code} (${m.name}) past exam papers, tests and supplementaries from NUST — free, shared by students.`,
+      alternates: { canonical: `/modules/${m.code.toLowerCase()}` },
+    };
+  } catch {
+    return { title: `${code.toUpperCase()} past papers` };
+  }
 }
 
 export default async function ModulePage({ params }: { params: Promise<{ code: string }> }) {
   const { code } = await params;
-  const normalized = code.toUpperCase();
+  if (!/^[a-z0-9]{2,20}$/i.test(code)) notFound();
+  const m = await getModuleByCode(code);
+  if (!m) notFound();
 
-  try {
+  const [papers, programmes, user] = await Promise.all([listModulePapers(m.id), getModuleProgrammes(m.id), getCurrentUser()]);
+
+  let following = false;
+  let savedIds: string[] = [];
+  if (user) {
     const { getDb } = await import("@/lib/db");
-    const { modules } = await import("@/db/schema/modules");
-    const { programmeModules } = await import("@/db/schema/programme_modules");
-    const { programmes } = await import("@/db/schema/programmes");
-    const { departments } = await import("@/db/schema/departments");
-    const { papers } = await import("@/db/schema/papers");
-    const { eq, desc } = await import("drizzle-orm");
+    const { bookmarks } = await import("@/db/schema/bookmarks");
     const db = getDb();
+    const rows = await db.select({ paperId: bookmarks.paperId, moduleId: bookmarks.moduleId }).from(bookmarks).where(eq(bookmarks.userId, user.id));
+    following = rows.some((r) => r.moduleId === m.id);
+    savedIds = rows.filter((r) => r.paperId).map((r) => r.paperId!);
+  }
 
-    const mod = await db.select().from(modules).where(eq(modules.code, normalized)).limit(1);
-    if (mod.length === 0) return notFound();
-    const m = mod[0];
+  const years = new Set(papers.map((p) => p.academicYear));
+  const totalDownloads = papers.reduce((s, p) => s + p.downloads, 0);
+  const totalViews = papers.reduce((s, p) => s + p.views, 0);
+  const serialized: ModulePaper[] = papers.map((p) => ({
+    id: p.id,
+    academicYear: p.academicYear,
+    semester: p.semester,
+    assessmentType: p.assessmentType,
+    assessmentNumber: p.assessmentNumber,
+    views: p.views,
+    downloads: p.downloads,
+    fileSize: p.fileSize,
+    pageCount: p.pageCount,
+    hasFile: p.hasFile,
+    createdAt: p.createdAt.toISOString(),
+    uploader: p.uploader ? { username: p.uploader.username, displayName: p.uploader.displayName } : null,
+  }));
 
-    // Programmes that use this module — proves canonical dedup
-    const links = await db
-      .select({ code: programmes.code, name: programmes.name, yearLevel: programmeModules.yearLevel, semester: programmeModules.semester })
-      .from(programmeModules)
-      .innerJoin(programmes, eq(programmeModules.programmeId, programmes.id))
-      .where(eq(programmeModules.moduleId, m.id))
-      .orderBy(programmes.code);
+  const crumbs = [{ href: "/browse", label: "Browse" }];
+  if (m.facultySlug && m.facultyCode) crumbs.push({ href: `/browse/${m.facultySlug}`, label: m.facultyCode });
+  if (m.facultySlug && m.departmentSlug && m.departmentName) crumbs.push({ href: `/browse/${m.facultySlug}/${m.departmentSlug}`, label: m.departmentName });
 
-    let dept: { name: string; slug: string } | null = null;
-    if (m.departmentId) {
-      const d = await db.select().from(departments).where(eq(departments.id, m.departmentId)).limit(1);
-      if (d.length) dept = { name: d[0].name, slug: d[0].slug };
-    }
+  const jsonLd = {
+    "@context": "https://schema.org",
+    "@type": "Course",
+    courseCode: m.code,
+    name: m.name,
+    provider: { "@type": "CollegeOrUniversity", name: "Namibia University of Science and Technology" },
+  };
 
-    // Papers for this module (stage 7 will populate)
-    let papersByYear: Map<number, typeof papers.$inferSelect[]> | null = null;
-    try {
-      const pap = await db.select().from(papers).where(eq(papers.moduleId, m.id)).orderBy(desc(papers.academicYear));
-      papersByYear = new Map();
-      for (const p of pap) {
-        if (!papersByYear.has(p.academicYear)) papersByYear.set(p.academicYear, []);
-        papersByYear.get(p.academicYear)!.push(p);
-      }
-    } catch {
-      // papers table may be empty
-    }
+  return (
+    <Container className="py-8">
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
+      <Breadcrumbs items={[...crumbs, { label: m.code }]} />
 
-    return (
-      <Container className="py-8">
-        <div className="text-sm text-muted-foreground">
-          <Link href="/browse" className="hover:underline">
-            Browse
-          </Link>{" "}
-          / {m.code}
-        </div>
-
-        <div className="mt-3">
-          <h1 className="text-3xl font-bold tracking-tight font-mono">{m.code}</h1>
-          <p className="mt-1 text-lg text-foreground">{m.name}</p>
-          {dept && <p className="mt-1 text-sm text-muted-foreground">{dept.name}</p>}
-          <div className="mt-3 flex flex-wrap gap-2">
-            <Badge>{links.length} {links.length === 1 ? "programme" : "programmes"} use this module</Badge>
-            <Badge variant="outline">Canonical — one row, many programmes</Badge>
+      <div className="mt-4 flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <h1 className="font-mono text-3xl font-bold tracking-tight sm:text-4xl">{m.code}</h1>
+            {papers.length > 0 ? <Badge variant="success">{papers.length} paper{papers.length === 1 ? "" : "s"}</Badge> : <Badge variant="outline">No papers yet</Badge>}
           </div>
+          <p className="mt-1.5 text-lg text-foreground/90">{m.name}</p>
+          {m.departmentName && <p className="mt-0.5 text-sm text-muted-foreground">{m.departmentName}{m.schoolName ? ` · ${m.schoolName}` : ""}</p>}
         </div>
+        <div className="flex flex-wrap gap-2">
+          <SaveButton moduleCode={m.code} initial={following} />
+          <ShareButton title={`${m.code} past papers`} text={`${m.code} ${m.name} past papers on NustWeShare`} />
+          <Link href={`/upload?module=${m.code}`} className={buttonVariants({ variant: "brand" })}>
+            <Upload /> Upload
+          </Link>
+        </div>
+      </div>
 
-        {/* Programmes that use this module — proves dedup */}
-        <Card className="mt-6">
-          <CardHeader>
-            <CardTitle className="text-base">Programmes that include {m.code}</CardTitle>
-            <CardDescription>Same module, many courses — courses are just filters to find it easier.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="grid gap-2 sm:grid-cols-2">
-              {links.map((l) => (
-                <Link key={l.code} href={`/browse/${l.code}`} className="rounded-xl border px-3 py-2 text-sm hover:bg-accent">
-                  <span className="font-mono font-semibold">{l.code}</span> — <span className="text-muted-foreground">{l.name.slice(0, 50)}</span>
-                  {l.yearLevel && <Badge variant="outline" className="ml-2">Year {l.yearLevel} Sem {l.semester}</Badge>}
-                </Link>
-              ))}
+      {papers.length > 0 && (
+        <dl className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
+          {[
+            { k: "Papers", v: papers.length, icon: FileText },
+            { k: "Years covered", v: years.size, icon: GraduationCap },
+            { k: "Reads", v: totalViews, icon: Eye },
+            { k: "Downloads", v: totalDownloads, icon: Download },
+          ].map((s) => (
+            <div key={s.k} className="rounded-xl border bg-card px-4 py-3">
+              <dt className="flex items-center gap-1.5 text-xs text-muted-foreground"><s.icon className="size-3.5" /> {s.k}</dt>
+              <dd className="mt-0.5 text-xl font-semibold tabular-nums">{compactNumber(s.v)}</dd>
             </div>
-          </CardContent>
-        </Card>
+          ))}
+        </dl>
+      )}
 
-        {/* Papers — empty until Stage 7, but structure ready */}
-        <Card className="mt-6">
-          <CardHeader>
-            <CardTitle className="text-base">Available Papers</CardTitle>
-            <CardDescription>Grouped by year — Test 1 / Test 2 / Exam / Supplementary / Quiz / Assignment / Lab / Tutorial</CardDescription>
+      <section className="mt-8" aria-labelledby="papers-h">
+        <h2 id="papers-h" className="sr-only">Papers</h2>
+        <ModulePapers moduleCode={m.code} moduleName={m.name} papers={serialized} savedIds={savedIds} />
+      </section>
+
+      <div className="mt-10 grid gap-6 lg:grid-cols-5">
+        <div className="lg:col-span-3">
+          <PaperRequests moduleCode={m.code} />
+        </div>
+        <Card className="lg:col-span-2">
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <GraduationCap className="size-4 text-info" /> Taught in {programmes.length} programme{programmes.length === 1 ? "" : "s"}
+            </CardTitle>
           </CardHeader>
           <CardContent>
-            {!papersByYear || papersByYear.size === 0 ? (
-              <div className="py-6 text-center">
-                <p className="text-sm text-muted-foreground">No papers yet for this module — be the first to share.</p>
-                <p className="mt-1 text-xs text-muted-foreground">Every paper helps the next NUST student.</p>
-                <Link href="/upload" className="mt-4 inline-flex items-center justify-center rounded-xl bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground hover:bg-slate-800 min-h-[44px]">
-                  Upload for {m.code}
-                </Link>
-                <div className="mt-6 grid gap-2 text-left sm:grid-cols-2">
-                  {[2026, 2025, 2024].map((y) => (
-                    <div key={y} className="rounded-xl border p-3">
-                      <p className="text-sm font-semibold">{y}</p>
-                      <p className="mt-1 text-xs text-muted-foreground">Test 1 · Test 2 · Exam · Supplementary</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
+            {programmes.length === 0 ? (
+              <p className="text-sm text-muted-foreground">Not linked to a programme yet.</p>
             ) : (
-              <div className="space-y-4">
-                {[...papersByYear.entries()]
-                  .sort((a, b) => b[0] - a[0])
-                  .map(([year, list]) => (
-                    <div key={year} className="rounded-xl border p-3">
-                      <p className="text-sm font-semibold">{year}</p>
-                      <div className="mt-2 flex flex-wrap gap-2">
-                        {list.map((p) => (
-                          <Link key={p.id} href={`/papers/${p.id}`}>
-                            <Badge variant="secondary" className="hover:bg-secondary/80">
-                              {p.assessmentType} {p.assessmentNumber ? ` ${p.assessmentNumber}` : ""} · Sem {p.semester} →
-                            </Badge>
-                          </Link>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-              </div>
+              <ul className="max-h-80 space-y-1 overflow-y-auto pr-1">
+                {programmes.map((p) => (
+                  <li key={p.code}>
+                    <Link href={`/browse/${p.facultySlug}/${p.deptSlug}/${p.code.toLowerCase()}`} className="flex items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-sm hover:bg-accent">
+                      <span className="min-w-0 truncate">
+                        <span className="mr-1.5 font-mono text-xs text-muted-foreground">{p.code}</span>
+                        {p.name}
+                      </span>
+                      <span className="shrink-0 text-xs text-muted-foreground">
+                        {p.yearLevel ? `Y${p.yearLevel}` : ""}
+                        {p.semester ? ` S${p.semester}` : ""}
+                      </span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
             )}
           </CardContent>
         </Card>
-
-        <div className="mt-6 flex gap-3 text-sm">
-          <Link href="/browse" className="hover:underline">
-            ← Browse
-          </Link>
-          <Link href={`/search?q=${m.code}`} className="text-muted-foreground hover:text-foreground hover:underline">
-            Search {m.code}
-          </Link>
-        </div>
-      </Container>
-    );
-  } catch (e) {
-    console.error("[module page]", e);
-    return (
-      <Container className="py-8">
-        <p className="text-sm text-muted-foreground">Could not load module — database not connected.</p>
-      </Container>
-    );
-  }
+      </div>
+    </Container>
+  );
 }

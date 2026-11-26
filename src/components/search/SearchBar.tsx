@@ -1,197 +1,150 @@
 "use client";
 
-import { useState, useEffect, useRef, useTransition } from "react";
+import { useEffect, useId, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
+import { ArrowRight, BookOpen, GraduationCap, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { recentSearches } from "@/lib/client/library";
 
-type SearchResult = {
-  modules: Array<{ code: string; name: string }>;
-  programmes: Array<{ code: string; name: string }>;
-};
+type Result = { modules: { code: string; name: string; paperCount: number }[]; programmes: { code: string; name: string; href: string }[] };
 
-export function SearchBar({ large = false, placeholder = "Search module code or name" }: { large?: boolean; placeholder?: string }) {
-  const [q, setQ] = useState("");
-  const [results, setResults] = useState<SearchResult | null>(null);
+export function SearchBar({ large = false, placeholder = "Search by module code or name", defaultValue = "", autoFocus }: { large?: boolean; placeholder?: string; defaultValue?: string; autoFocus?: boolean }) {
+  const [q, setQ] = useState(defaultValue);
+  const [res, setRes] = useState<Result | null>(null);
   const [open, setOpen] = useState(false);
-  const [focused, setFocused] = useState(0);
-  const router = useRouter();
+  const [active, setActive] = useState(-1);
   const [pending, start] = useTransition();
-  const boxRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const router = useRouter();
+  const box = useRef<HTMLDivElement>(null);
+  const listId = useId();
 
-  // Debounced fetch
   useEffect(() => {
-    if (q.trim().length < 1) {
-      setResults(null);
-      setOpen(false);
+    const term = q.trim();
+    if (term.length < 1 || term === defaultValue) {
+      setRes(null);
       return;
     }
+    const ctrl = new AbortController();
     const t = setTimeout(async () => {
       try {
-        const res = await fetch(`/api/search?q=${encodeURIComponent(q.trim())}`);
-        if (!res.ok) return;
-        const json = (await res.json()) as any;
-        if (json.data) {
-          setResults(json.data);
+        const r = await fetch(`/api/search?q=${encodeURIComponent(term)}&limit=7`, { signal: ctrl.signal });
+        const j = (await r.json()) as any;
+        if (j.data) {
+          setRes({ modules: j.data.modules.slice(0, 7), programmes: j.data.programmes.slice(0, 3) });
           setOpen(true);
-          setFocused(0);
+          setActive(-1);
         }
       } catch {}
-    }, 250);
-    return () => clearTimeout(t);
-  }, [q]);
+    }, 150);
+    return () => {
+      clearTimeout(t);
+      ctrl.abort();
+    };
+  }, [q, defaultValue]);
 
-  // Close on outside click
   useEffect(() => {
-    function onClick(e: MouseEvent) {
-      if (boxRef.current && !boxRef.current.contains(e.target as Node)) setOpen(false);
-    }
-    document.addEventListener("mousedown", onClick);
-    return () => document.removeEventListener("mousedown", onClick);
+    const onDown = (e: MouseEvent) => {
+      if (box.current && !box.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
   }, []);
 
-  function onSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    const trimmed = q.trim();
-    if (!trimmed) return;
+  const items = res ? [...res.modules.map((m) => ({ href: `/modules/${m.code.toLowerCase()}`, ...m, kind: "module" as const })), ...res.programmes.map((p) => ({ ...p, paperCount: 0, kind: "programme" as const }))] : [];
+
+  function go(href: string) {
+    if (q.trim().length >= 2) recentSearches.add(q.trim());
     setOpen(false);
-    start(() => router.push(`/search?q=${encodeURIComponent(trimmed)}`));
+    start(() => router.push(href));
   }
-
-  function onKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
-    if (!open || !results) return;
-    const items = [...(results.modules || []), ...(results.programmes || [])];
-    if (e.key === "ArrowDown") {
-      e.preventDefault();
-      setFocused((v) => (v + 1) % Math.max(items.length, 1));
-    } else if (e.key === "ArrowUp") {
-      e.preventDefault();
-      setFocused((v) => (v - 1 + Math.max(items.length, 1)) % Math.max(items.length, 1));
-    } else if (e.key === "Enter" && open && items.length > 0) {
-      // If dropdown open and focused item exists, navigate to it instead of search page
-      const all = [...results.modules.map((m) => ({ type: "module" as const, code: m.code })), ...results.programmes.map((p) => ({ type: "programme" as const, code: p.code }))];
-      const sel = all[focused];
-      if (sel && q.trim().length >= 2) {
-        e.preventDefault();
-        setOpen(false);
-        start(() => {
-          if (sel.type === "module") router.push(`/modules/${sel.code.toLowerCase()}`);
-          else router.push(`/search?q=${encodeURIComponent(sel.code)}`);
-        });
-      }
-    } else if (e.key === "Escape") {
-      setOpen(false);
-    }
-  }
-
-  const hasResults = results && (results.modules.length > 0 || results.programmes.length > 0);
 
   return (
-    <div ref={boxRef} className={cn("relative", large && "max-w-2xl mx-auto")}>
-      <form onSubmit={onSubmit} className="flex gap-2" role="search" aria-label="Search papers">
-        <div className="relative flex-1">
-          <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" aria-hidden="true">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <circle cx="11" cy="11" r="8" />
-              <path d="M21 21l-4.3-4.3" />
-            </svg>
-          </span>
-          <Input
-            ref={inputRef}
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            onKeyDown={onKeyDown}
-            onFocus={() => hasResults && setOpen(true)}
-            placeholder={large ? "ELC511S / Electronic Devices" : placeholder}
-            className={cn("pl-10", large && "h-14 text-base rounded-2xl")}
-            aria-label="Search module code or name"
-            aria-expanded={open}
-            aria-controls="search-dropdown"
-            aria-autocomplete="list"
-            autoComplete="off"
-          />
-        </div>
-        <Button type="submit" size={large ? "lg" : "default"} className={large ? "h-14 px-7 rounded-2xl" : ""} disabled={pending}>
+    <div ref={box} className={cn("relative w-full", large && "mx-auto max-w-2xl")}>
+      <form
+        role="search"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (active >= 0 && items[active]) return go(items[active].href);
+          const t = q.trim();
+          if (t) go(`/search?q=${encodeURIComponent(t)}`);
+        }}
+        className={cn(
+          "flex items-center gap-2 rounded-2xl border bg-surface shadow-[var(--shadow-soft)] transition-[border-color,box-shadow] focus-within:border-ring focus-within:ring-4 focus-within:ring-ring/15",
+          large ? "h-16 pl-5 pr-2" : "h-12 pl-4 pr-1.5"
+        )}
+      >
+        <Search className={cn("shrink-0 text-muted-foreground", large ? "size-5" : "size-4")} aria-hidden="true" />
+        <input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          onFocus={() => res && setOpen(true)}
+          onKeyDown={(e) => {
+            if (!open || !items.length) return;
+            if (e.key === "ArrowDown") {
+              e.preventDefault();
+              setActive((a) => (a + 1) % items.length);
+            } else if (e.key === "ArrowUp") {
+              e.preventDefault();
+              setActive((a) => (a <= 0 ? items.length - 1 : a - 1));
+            } else if (e.key === "Escape") setOpen(false);
+          }}
+          placeholder={placeholder}
+          aria-label="Search modules"
+          role="combobox"
+          aria-expanded={open}
+          aria-controls={listId}
+          aria-activedescendant={active >= 0 ? `${listId}-${active}` : undefined}
+          autoComplete="off"
+          spellCheck={false}
+          autoFocus={autoFocus}
+          className={cn("h-full min-w-0 flex-1 bg-transparent outline-none placeholder:text-muted-foreground/80", large ? "text-lg" : "text-[15px]")}
+        />
+        <button
+          type="submit"
+          className={cn("inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-primary font-medium text-primary-foreground transition-colors hover:bg-primary-hover", large ? "h-12 px-5" : "h-9 px-3.5 text-sm")}
+          disabled={pending}
+        >
           {pending ? "Searching…" : "Search"}
-        </Button>
+        </button>
       </form>
 
-      {open && hasResults && (
-        <div
-          id="search-dropdown"
-          role="listbox"
-          className="absolute left-0 right-0 mt-2 rounded-2xl border bg-card shadow-lg max-h-[70vh] overflow-auto z-20"
-        >
-          {results.modules.length > 0 && (
-            <div className="p-2">
-              <p className="px-2 py-1 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Modules</p>
-              {results.modules.map((m, idx) => {
-                const isFocused = idx === focused;
-                return (
+      {open && res && (
+        <div id={listId} role="listbox" className="absolute inset-x-0 z-30 mt-2 overflow-hidden rounded-2xl border bg-card text-left shadow-[var(--shadow-pop)] animate-pop-in">
+          {items.length === 0 ? (
+            <p className="px-4 py-5 text-sm text-muted-foreground">No modules match “{q}”. Try the code, e.g. MCI511S.</p>
+          ) : (
+            <ul className="max-h-[60vh] overflow-y-auto p-1.5">
+              {items.map((it, i) => (
+                <li key={it.kind + it.code}>
                   <button
-                    key={m.code}
+                    id={`${listId}-${i}`}
                     role="option"
-                    aria-selected={isFocused}
-                    onClick={() => {
-                      setOpen(false);
-                      router.push(`/modules/${m.code.toLowerCase()}`);
-                    }}
-                    className={cn("w-full text-left rounded-xl px-3 py-2 flex items-center justify-between gap-2", isFocused ? "bg-accent" : "hover:bg-accent")}
+                    aria-selected={i === active}
+                    onMouseMove={() => setActive(i)}
+                    onClick={() => go(it.href)}
+                    className={cn("flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left", i === active && "bg-accent")}
                   >
-                    <span>
-                      <span className="font-mono text-sm font-semibold">{m.code}</span>
-                      <span className="ml-2 text-sm">{m.name}</span>
+                    <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+                      {it.kind === "module" ? <BookOpen className="size-4" /> : <GraduationCap className="size-4" />}
                     </span>
-                    <span className="text-xs text-muted-foreground hidden sm:inline">Module</span>
-                  </button>
-                );
-              })}
-            </div>
-          )}
-          {results.programmes.length > 0 && (
-            <div className="p-2 border-t">
-              <p className="px-2 py-1 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Programmes</p>
-              {results.programmes.map((p, idx) => {
-                const offset = results.modules.length;
-                const isFocused = offset + idx === focused;
-                return (
-                  <button
-                    key={p.code}
-                    role="option"
-                    aria-selected={isFocused}
-                    onClick={() => {
-                      setOpen(false);
-                      router.push(`/search?q=${encodeURIComponent(p.code)}`);
-                    }}
-                    className={cn("w-full text-left rounded-xl px-3 py-2 flex items-center justify-between gap-2", isFocused ? "bg-accent" : "hover:bg-accent")}
-                  >
-                    <span>
-                      <span className="font-mono text-xs font-semibold">{p.code}</span>
-                      <span className="ml-2 text-sm line-clamp-1">{p.name}</span>
+                    <span className="min-w-0 flex-1">
+                      <span className={cn("block text-sm font-medium", it.kind === "module" && "font-mono")}>{it.kind === "module" ? it.code : it.name}</span>
+                      <span className="block truncate text-xs text-muted-foreground">{it.kind === "module" ? it.name : `Programme · ${it.code}`}</span>
                     </span>
+                    {it.kind === "module" &&
+                      (it.paperCount > 0 ? (
+                        <span className="rounded-full bg-success-soft px-2 py-0.5 text-[11px] font-medium text-success">{it.paperCount} paper{it.paperCount === 1 ? "" : "s"}</span>
+                      ) : (
+                        <span className="text-[11px] text-muted-foreground">no papers yet</span>
+                      ))}
                   </button>
-                );
-              })}
-            </div>
+                </li>
+              ))}
+            </ul>
           )}
-          <div className="p-2 border-t">
-            <button
-              onClick={onSubmit as any}
-              className="w-full text-left rounded-xl px-3 py-2 text-sm font-medium hover:bg-accent flex items-center gap-2"
-            >
-              <span>Search for</span>
-              <span className="font-semibold">&quot;{q}&quot;</span>
-              <span className="text-muted-foreground">→</span>
-            </button>
-          </div>
-        </div>
-      )}
-
-      {open && results && !hasResults && (
-        <div className="absolute left-0 right-0 mt-2 rounded-2xl border bg-card shadow-lg p-4 z-20">
-          <p className="text-sm text-muted-foreground">No results for “{q}” — try a code like MCI511S or a name like Mathematics.</p>
+          <button onClick={() => go(`/search?q=${encodeURIComponent(q.trim())}`)} className="flex w-full items-center justify-between border-t px-4 py-3 text-sm font-medium hover:bg-accent">
+            See all results for “{q.trim()}” <ArrowRight className="size-4" />
+          </button>
         </div>
       )}
     </div>

@@ -18,7 +18,8 @@ jobs:
       - run: npm ci
       - run: npx tsc --noEmit
       - run: npm test
-      - run: npm run build:next
+      - run: npm run lint
+      - run: npm run build
         env:
           DATABASE_URL: postgresql://user:pass@localhost:5432/nustweshare
           APP_SECRET: test-secret-1234567890-test-secret-1234567890

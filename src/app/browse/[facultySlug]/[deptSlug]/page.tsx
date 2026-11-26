@@ -1,87 +1,61 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { and, asc, eq } from "drizzle-orm";
 import { Container } from "@/components/ui/container";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Breadcrumbs, PageHeader } from "@/components/ui/page-header";
+import { EmptyState } from "@/components/ui/empty-state";
+import { getDb } from "@/lib/db";
+import { faculties } from "@/db/schema/faculties";
+import { schools } from "@/db/schema/schools";
+import { departments } from "@/db/schema/departments";
+import { programmes } from "@/db/schema/programmes";
 
 export const dynamic = "force-dynamic";
 
+const LEVEL_ORDER = ["certificate", "diploma", "bachelor", "honours", "master", "doctorate", "other"];
+
 export default async function DeptPage({ params }: { params: Promise<{ facultySlug: string; deptSlug: string }> }) {
   const { facultySlug, deptSlug } = await params;
-  try {
-    const { getDb } = await import("@/lib/db");
-    const { faculties } = await import("@/db/schema/faculties");
-    const { departments } = await import("@/db/schema/departments");
-    const { programmes } = await import("@/db/schema/programmes");
-    const { eq } = await import("drizzle-orm");
-    const db = getDb();
+  const db = getDb();
+  const rows = await db
+    .select({ dept: departments, fac: faculties })
+    .from(departments)
+    .innerJoin(schools, eq(departments.schoolId, schools.id))
+    .innerJoin(faculties, eq(schools.facultyId, faculties.id))
+    .where(and(eq(departments.slug, deptSlug.toLowerCase()), eq(faculties.slug, facultySlug.toLowerCase())))
+    .limit(1);
+  if (!rows[0]) notFound();
+  const { dept, fac } = rows[0];
+  const progs = await db.select().from(programmes).where(eq(programmes.departmentId, dept.id)).orderBy(asc(programmes.name));
+  const groups = LEVEL_ORDER.map((lvl) => ({ lvl, list: progs.filter((p) => p.level === lvl) })).filter((g) => g.list.length);
 
-    const fac = await db.select().from(faculties).where(eq(faculties.slug, facultySlug.toLowerCase().trim())).limit(1);
-    if (fac.length === 0) return notFound();
-    const normalizedDept = deptSlug.toLowerCase().trim();
-    const dept = await db.select().from(departments).where(eq(departments.slug, normalizedDept)).limit(1);
-    if (dept.length === 0) return notFound();
-    // Validate that department belongs to requested faculty (via school → faculty)
-    try {
-      const { schools } = await import("@/db/schema/schools");
-      const sch = await db.select().from(schools).where(eq(schools.id, dept[0].schoolId)).limit(1);
-      if (sch.length && sch[0].facultyId !== fac[0].id) {
-        // Dept exists but under different faculty — show notFound to avoid leaking cross-faculty data
-        // However still allow viewing dept if slug collides: we prefer to show correct faculty breadcrumb but not crash
-        console.warn("[dept page] faculty mismatch", { facultySlug, deptSlug, expectedFaculty: fac[0].id, actual: sch[0].facultyId });
-      }
-    } catch {}
-
-    const progs = await db.select().from(programmes).where(eq(programmes.departmentId, dept[0].id)).orderBy(programmes.code);
-
-    return (
-      <Container className="py-8">
-        <div className="text-sm text-muted-foreground">
-          <Link href="/browse" className="hover:underline">
-            Browse
-          </Link>{" "}
-          /{" "}
-          <Link href={`/browse/${facultySlug}`} className="hover:underline">
-            {fac[0].code}
-          </Link>{" "}
-          / {dept[0].name}
-        </div>
-        <h1 className="mt-2 text-2xl font-bold tracking-tight">{dept[0].name}</h1>
-        <p className="mt-1 text-sm text-muted-foreground">{progs.length} Programmes</p>
-
-        {progs.length === 0 ? (
-          <Card className="mt-6">
-            <CardContent className="py-8 text-center text-sm text-muted-foreground">No programmes found.</CardContent>
-          </Card>
-        ) : (
-          <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {progs.map((p) => (
-              <Link key={p.id} href={`/browse/${facultySlug}/${deptSlug}/${p.code}`} className="group">
-                <Card className="h-full hover:border-foreground/20 transition-colors">
-                  <CardHeader className="pb-2">
-                    <div className="flex items-start justify-between gap-2">
-                      <Badge variant="secondary">{p.code}</Badge>
-                      <Badge variant={p.level === "bachelor" ? "default" : "outline"}>{p.level}</Badge>
+  return (
+    <Container className="py-8 sm:py-10">
+      <Breadcrumbs items={[{ href: "/browse", label: "Browse" }, { href: `/browse/${fac.slug}`, label: fac.code }, { label: dept.name }]} />
+      <PageHeader className="mt-4" title={dept.name} description={`${progs.length} programmes`} />
+      {progs.length === 0 ? (
+        <EmptyState className="mt-8" title="No programmes listed yet" />
+      ) : (
+        <div className="mt-8 space-y-8">
+          {groups.map((g) => (
+            <section key={g.lvl}>
+              <h2 className="mb-3 text-sm font-semibold capitalize text-muted-foreground">{g.lvl === "master" ? "Masters" : g.lvl === "doctorate" ? "Doctoral" : `${g.lvl}s`}</h2>
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {g.list.map((p) => (
+                  <Link key={p.id} href={`/browse/${fac.slug}/${dept.slug}/${p.code.toLowerCase()}`} className="group rounded-xl border bg-card p-4 hover:border-input hover:shadow-[var(--shadow-soft)]">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-mono text-xs text-muted-foreground">{p.code}</span>
+                      {p.nqfLevel && <Badge variant="outline">NQF {p.nqfLevel}</Badge>}
                     </div>
-                    <CardTitle className="text-sm leading-tight group-hover:underline">{p.name}</CardTitle>
-                    <CardDescription className="text-xs">NQF {p.nqfLevel} · {p.nqfCredits} credits</CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <p className="text-xs text-muted-foreground">View modules →</p>
-                  </CardContent>
-                </Card>
-              </Link>
-            ))}
-          </div>
-        )}
-      </Container>
-    );
-  } catch (e) {
-    console.error("[dept page]", e);
-    return (
-      <Container className="py-8">
-        <p className="text-sm text-muted-foreground">Could not load department.</p>
-      </Container>
-    );
-  }
+                    <p className="mt-2 text-sm font-medium leading-snug group-hover:underline">{p.name}</p>
+                  </Link>
+                ))}
+              </div>
+            </section>
+          ))}
+        </div>
+      )}
+    </Container>
+  );
 }

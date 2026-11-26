@@ -6,6 +6,7 @@ import { papers } from "@/db/schema/papers";
 import { paperFiles } from "@/db/schema/paper_files";
 import { randomUUID } from "crypto";
 import { validatePdfFile, validatePdfMagic } from "@/lib/validation/pdf";
+import { AppError } from "@/lib/errors";
 import { sha256 } from "@/lib/duplicates/sha256";
 import { fingerprintFromText, normalizeText } from "@/lib/duplicates/textFingerprint";
 import { findOrCreatePaper } from "@/lib/papers/resolve";
@@ -14,12 +15,16 @@ import { buildR2Key } from "@/lib/r2/keys";
 import { sanitizeFilename, hashIp } from "@/lib/security/sanitize";
 import { rateLimit, limits } from "@/lib/security/rateLimit";
 import { logger } from "@/lib/logger";
+import { getUserFromRequest } from "@/lib/auth/current";
+import { getModuleByCode } from "@/lib/papers/queries";
+import { fulfilRequests } from "@/lib/papers/moderation";
+import { getClientIp } from "@/lib/http";
 
 export const dynamic = "force-dynamic";
 
 // POST /api/papers/upload — ghost-first, module required, multi-file, per-file metadata optional
 export async function POST(req: NextRequest) {
-  const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || req.headers.get("x-real-ip") || "unknown";
+  const ip = getClientIp(req);
   const rl = rateLimit({ key: `upload:${hashIp(ip).slice(0, 16)}`, limit: limits.upload.limit, windowMs: limits.upload.windowMs });
   if (!rl.allowed) {
     return NextResponse.json({ error: { code: "RATE_LIMITED", message: "Too many uploads. Try again later." } }, { status: 429 });
@@ -118,62 +123,19 @@ export async function POST(req: NextRequest) {
     } catch {}
   }
 
-  // Check session for uploaderId (optional profile)
-  let uploaderId: string | null = null;
-  const sessionCookie = req.cookies.get("session")?.value;
-  if (sessionCookie) {
-    try {
-      const { verifySessionToken } = await import("@/lib/auth/session");
-      const { getEnv } = await import("@/lib/env");
-      const env = getEnv();
-      const uid = verifySessionToken(sessionCookie, env.APP_SECRET);
-      if (uid) uploaderId = uid;
-    } catch {}
-  }
+  // Optional profile: signed-in uploads count towards your profile; "anonymous" hides your name publicly
+  const currentUser = await getUserFromRequest(req);
+  const uploaderId: string | null = currentUser?.id ?? null;
+  const anonField = form.get("anonymous");
+  const hideUploader = currentUser ? (anonField != null ? String(anonField) === "1" || String(anonField) === "true" : currentUser.uploadAnonymously) : false;
 
   const storage = getStorage();
-  let ipHash: string;
+  const ipHash = hashIp(ip);
+  // Faculty slug for the R2 key — via module → department → school → faculty
+  let facultySlug = "general";
   try {
-    ipHash = hashIp(ip);
-  } catch {
-    ipHash = "unknown";
-  }
-  // Determine faculty slug for R2 key — prefer module's direct department → school → faculty, fallback to programme chain
-  let facultySlug = "fci";
-  try {
-    const { faculties } = await import("@/db/schema/faculties");
-    const { schools } = await import("@/db/schema/schools");
-    const { departments } = await import("@/db/schema/departments");
-    // First: try module.departmentId directly (canonical)
-    if (moduleRow.departmentId) {
-      const dept = await db.select().from(departments).where(eq(departments.id, moduleRow.departmentId)).limit(1);
-      if (dept.length) {
-        const sch = await db.select().from(schools).where(eq(schools.id, dept[0].schoolId)).limit(1);
-        if (sch.length) {
-          const fac = await db.select().from(faculties).where(eq(faculties.id, sch[0].facultyId)).limit(1);
-          if (fac.length) facultySlug = fac[0].slug;
-        }
-      }
-    }
-    // Fallback: via programmeModules chain if direct failed
-    if (facultySlug === "fci" && !moduleRow.departmentId) {
-      const { programmeModules } = await import("@/db/schema/programme_modules");
-      const { programmes } = await import("@/db/schema/programmes");
-      const pm = await db.select().from(programmeModules).where(eq(programmeModules.moduleId, moduleRow.id)).limit(1);
-      if (pm.length > 0) {
-        const prog = await db.select().from(programmes).where(eq(programmes.id, pm[0].programmeId)).limit(1);
-        if (prog.length) {
-          const dept = await db.select().from(departments).where(eq(departments.id, prog[0].departmentId)).limit(1);
-          if (dept.length) {
-            const sch = await db.select().from(schools).where(eq(schools.id, dept[0].schoolId)).limit(1);
-            if (sch.length) {
-              const fac = await db.select().from(faculties).where(eq(faculties.id, sch[0].facultyId)).limit(1);
-              if (fac.length) facultySlug = fac[0].slug;
-            }
-          }
-        }
-      }
-    }
+    const info = await getModuleByCode(moduleRow.code);
+    if (info?.facultySlug) facultySlug = info.facultySlug;
   } catch {}
 
   const results: Array<{ filename: string; status: "added" | "duplicate" | "error"; paperId?: string; message?: string; duplicatePaper?: any }> = [];
@@ -225,8 +187,8 @@ export async function POST(req: NextRequest) {
       const finalNumber = finalType === "EXAM" || finalType === "SUPPLEMENTARY" ? null : (assessmentNumber ?? null);
 
       // Validate year/semester range
-      if (academicYear < 2000 || academicYear > 2035) throw new Error("Invalid year");
-      if (semester !== 1 && semester !== 2) throw new Error("Invalid semester");
+      if (!Number.isInteger(academicYear) || academicYear < 2000 || academicYear > nowYear + 1) throw new AppError("That year doesn\u2019t look right.", "INVALID_YEAR", 400);
+      if (semester !== 1 && semester !== 2) throw new AppError("Semester must be 1 or 2.", "INVALID_SEMESTER", 400);
 
       // Find or create paper identity (Spec 30)
       const { id: paperId } = await findOrCreatePaper({
@@ -311,6 +273,7 @@ export async function POST(req: NextRequest) {
           perceptualHash: null, // Level 4 stub
           isCanonical: true, // will be adjusted if multiple files per paper
           uploaderId,
+          hideUploader,
           uploadIpHash: ipHash,
         })
         .returning({ id: paperFiles.id });
@@ -343,9 +306,17 @@ export async function POST(req: NextRequest) {
         }
       } catch {}
 
+      try {
+        await fulfilRequests({ id: paperId, moduleId: moduleRow.id, academicYear, assessmentType: finalType as any });
+      } catch {}
       results.push({ filename: originalName, status: "added", paperId, message: "Paper added successfully." });
     } catch (err: any) {
       const msg = err?.message || "Failed to process file.";
+      if (err instanceof AppError) {
+        logger.uploadError({ filename: originalName, error: msg, ipHash: ipHash.slice(0, 8) });
+        results.push({ filename: originalName, status: "error", message: msg });
+        continue;
+      }
       // Map known errors to friendly messages (Spec 62)
       let friendly = msg;
       if (msg.includes("3 MB") || msg.toLowerCase().includes("larger")) friendly = "This PDF is larger than the 3 MB limit.";

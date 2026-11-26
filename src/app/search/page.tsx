@@ -1,128 +1,105 @@
 import Link from "next/link";
+import { BookOpen, GraduationCap, SearchX } from "lucide-react";
 import { Container } from "@/components/ui/container";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { PageHeader } from "@/components/ui/page-header";
+import { EmptyState } from "@/components/ui/empty-state";
 import { SearchBar } from "@/components/search/SearchBar";
+import { searchCatalog } from "@/lib/search";
+import { cn } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
-export const metadata = { title: "Search" };
 
-async function search(q: string) {
-  try {
-    const { getDb } = await import("@/lib/db");
-    const { modules } = await import("@/db/schema/modules");
-    const { programmes } = await import("@/db/schema/programmes");
-    const { sql } = await import("drizzle-orm");
-    const db = getDb();
-    const escaped = q.replace(/[%_\\]/g, "\\$&");
-    const like = `%${escaped}%`;
-    const mods = await db
-      .select()
-      .from(modules)
-      .where(sql`${modules.code} ILIKE ${like} ESCAPE '\' OR ${modules.name} ILIKE ${like} ESCAPE '\'`)
-      .orderBy(modules.code)
-      .limit(20);
-    const progs = await db
-      .select()
-      .from(programmes)
-      .where(sql`${programmes.code} ILIKE ${like} ESCAPE '\' OR ${programmes.name} ILIKE ${like} ESCAPE '\'`)
-      .orderBy(programmes.code)
-      .limit(10);
-    return { modules: mods, programmes: progs };
-  } catch (e) {
-    console.error("[search page]", (e as any)?.message ?? e);
-    return null;
-  }
+export async function generateMetadata({ searchParams }: { searchParams: Promise<{ q?: string }> }) {
+  const { q } = await searchParams;
+  return { title: q ? `“${q}” — search` : "Search", robots: { index: false } };
 }
 
-function highlight(text: string, q: string) {
-  if (!q) return text;
-  const idx = text.toLowerCase().indexOf(q.toLowerCase());
-  if (idx === -1) return text;
+function Hl({ text, q }: { text: string; q: string }) {
+  const i = text.toLowerCase().indexOf(q.toLowerCase());
+  if (!q || i < 0) return <>{text}</>;
   return (
     <>
-      {text.slice(0, idx)}
-      <mark className="bg-yellow-100 rounded px-0.5">{text.slice(idx, idx + q.length)}</mark>
-      {text.slice(idx + q.length)}
+      {text.slice(0, i)}
+      <mark className="rounded bg-brand-soft px-0.5 text-foreground">{text.slice(i, i + q.length)}</mark>
+      {text.slice(i + q.length)}
     </>
   );
 }
 
-export default async function SearchPage({ searchParams }: { searchParams: Promise<{ q?: string }> }) {
-  const { q } = await searchParams;
-  const trimmed = q?.trim() ?? "";
-  const data = trimmed ? await search(trimmed) : null;
+export default async function SearchPage({ searchParams }: { searchParams: Promise<{ q?: string; papers?: string }> }) {
+  const { q = "", papers } = await searchParams;
+  const term = q.trim().slice(0, 100);
+  const onlyWithPapers = papers === "1";
+  const data = term ? await searchCatalog(term, { moduleLimit: 60, programmeLimit: 10, onlyWithPapers }).catch(() => null) : null;
+  const href = (p: boolean) => `/search?q=${encodeURIComponent(term)}${p ? "&papers=1" : ""}`;
 
   return (
-    <Container className="py-8">
-      <h1 className="text-2xl font-bold tracking-tight">Search</h1>
-      <p className="mt-1 text-sm text-muted-foreground">Module code, module name, or programme — partial matches like ELC, Electronic, 511S all work.</p>
+    <Container className="py-8 sm:py-10">
+      <PageHeader title="Search" description="Module codes, names and programmes. Partial words and small typos are fine." />
       <div className="mt-6 max-w-2xl">
-        <SearchBar placeholder="Search modules — e.g. MCI511S" />
+        <SearchBar defaultValue={term} autoFocus={!term} />
       </div>
 
-      {!trimmed ? (
-        <Card className="mt-6">
-          <CardContent className="py-10 text-center">
-            <p className="text-sm text-muted-foreground">Try: <Link href="/search?q=MCI511S" className="underline hover:text-foreground">MCI511S</Link> · <Link href="/search?q=PLU411S" className="underline">PLU411S</Link> · <Link href="/search?q=COA511S" className="underline">COA511S</Link></p>
-            <p className="mt-2 text-xs text-muted-foreground">Tip: type at least 2 characters — results update instantly in the dropdown.</p>
-          </CardContent>
-        </Card>
+      {!term ? (
+        <div className="mt-10 text-sm text-muted-foreground">
+          Try{" "}
+          {["MCI511S", "Programming", "511S", "Electrical"].map((s, i) => (
+            <span key={s}>
+              {i > 0 && " · "}
+              <Link href={`/search?q=${encodeURIComponent(s)}`} className="font-medium text-info hover:underline">{s}</Link>
+            </span>
+          ))}
+        </div>
       ) : data === null ? (
-        <Card className="mt-6">
-          <CardContent className="py-8 text-center text-sm text-muted-foreground">Search unavailable — database not connected.</CardContent>
-        </Card>
+        <EmptyState className="mt-8" title="Search is temporarily unavailable" description="Please try again in a moment." />
       ) : data.modules.length === 0 && data.programmes.length === 0 ? (
-        <Card className="mt-6">
-          <CardContent className="py-10 text-center">
-            <p className="text-sm">
-              No results for <span className="font-mono font-semibold">&quot;{trimmed}&quot;</span>
-            </p>
-            <p className="mt-2 text-sm text-muted-foreground">Try a module code like MCI511S or a name like Mathematics.</p>
-          </CardContent>
-        </Card>
+        <EmptyState className="mt-8" icon={<SearchX />} title={`No results for “${term}”`} description={onlyWithPapers ? "No matching module has papers yet." : "Check the module code (e.g. MCI511S) or try fewer words."}>
+          {onlyWithPapers && <Link href={href(false)} className="text-sm font-medium text-info hover:underline">Show all modules</Link>}
+        </EmptyState>
       ) : (
-        <div className="mt-6 space-y-6">
-          {data.modules.length > 0 && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">Modules ({data.modules.length})</CardTitle>
-                <CardDescription>Canonical — one row per code, linked to many programmes.</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  {data.modules.map((m) => (
-                    <Link key={m.code} href={`/modules/${m.code.toLowerCase()}`} className="group rounded-xl border p-4 hover:bg-accent">
-                      <div className="flex items-start justify-between gap-2">
-                        <span className="font-mono text-sm font-semibold">{highlight(m.code, trimmed)}</span>
-                        <Badge variant="outline">Module</Badge>
-                      </div>
-                      <p className="mt-1 text-sm font-medium group-hover:underline">{highlight(m.name, trimmed)}</p>
-                    </Link>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          )}
+        <div className="mt-8 space-y-10">
+          <section>
+            <div className="mb-3 flex flex-wrap items-center gap-3">
+              <h2 className="flex items-center gap-2 text-base font-semibold">
+                <BookOpen className="size-4 text-info" /> Modules <span className="font-normal text-muted-foreground">({data.modules.length})</span>
+              </h2>
+              <div className="ml-auto inline-flex rounded-xl border bg-surface p-0.5 text-sm">
+                <Link href={href(false)} className={cn("rounded-lg px-3 py-1", !onlyWithPapers ? "bg-secondary font-medium" : "text-muted-foreground")}>All</Link>
+                <Link href={href(true)} className={cn("rounded-lg px-3 py-1", onlyWithPapers ? "bg-secondary font-medium" : "text-muted-foreground")}>With papers</Link>
+              </div>
+            </div>
+            <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
+              {data.modules.map((m) => (
+                <Link key={m.code} href={`/modules/${m.code.toLowerCase()}`} className="group rounded-xl border bg-card p-4 hover:border-input hover:shadow-[var(--shadow-soft)]">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-mono text-sm font-semibold"><Hl text={m.code} q={term} /></span>
+                    {m.paperCount > 0 ? (
+                      <span className="rounded-full bg-success-soft px-2 py-0.5 text-[11px] font-medium text-success">{m.paperCount} paper{m.paperCount === 1 ? "" : "s"}</span>
+                    ) : (
+                      <span className="text-[11px] text-muted-foreground">No papers yet</span>
+                    )}
+                  </div>
+                  <p className="mt-1 text-sm group-hover:underline"><Hl text={m.name} q={term} /></p>
+                  {m.departmentName && <p className="mt-1.5 truncate text-xs text-muted-foreground">{m.facultyCode} · {m.departmentName.replace(/^Department of /, "")}</p>}
+                </Link>
+              ))}
+            </div>
+          </section>
           {data.programmes.length > 0 && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">Programmes ({data.programmes.length})</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-2">
-                  {data.programmes.map((p) => (
-                    <Link key={p.code} href={`/search?q=${encodeURIComponent(p.code)}`} className="flex items-center justify-between rounded-xl border px-3 py-3 hover:bg-accent">
-                      <span>
-                        <span className="font-mono text-xs font-semibold">{highlight(p.code, trimmed)}</span>
-                        <span className="ml-2 text-sm">{highlight(p.name, trimmed)}</span>
-                      </span>
-                      <Badge variant="secondary">{p.level}</Badge>
-                    </Link>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
+            <section>
+              <h2 className="mb-3 flex items-center gap-2 text-base font-semibold">
+                <GraduationCap className="size-4 text-info" /> Programmes
+              </h2>
+              <div className="grid gap-2.5 sm:grid-cols-2">
+                {data.programmes.map((p) => (
+                  <Link key={p.code} href={p.href} className="flex items-center gap-3 rounded-xl border bg-card px-4 py-3 hover:border-input">
+                    <span className="font-mono text-xs text-muted-foreground">{p.code}</span>
+                    <span className="min-w-0 flex-1 truncate text-sm font-medium"><Hl text={p.name} q={term} /></span>
+                    <span className="text-xs capitalize text-muted-foreground">{p.level}</span>
+                  </Link>
+                ))}
+              </div>
+            </section>
           )}
         </div>
       )}

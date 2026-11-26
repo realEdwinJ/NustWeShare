@@ -1,229 +1,228 @@
 "use client";
 
-import { useState, useRef } from "react";
-import { ModuleSelector } from "./ModuleSelector";
-import { FileCard } from "./FileCard";
+import Link from "next/link";
+import { useEffect, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { CloudUpload, EyeOff, Heart, PartyPopper, RotateCcw } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { ModuleSelector, type ModuleOption } from "./ModuleSelector";
+import { FileCard, type FileMeta } from "./FileCard";
 import { parseFilename } from "@/lib/filename";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
+import { useSession } from "@/components/providers/session";
+import { useToast } from "@/components/ui/toast";
+import { ASSESSMENT_TYPES } from "@/lib/papers/format";
 
-type ModuleOption = { code: string; name: string };
-type FileMeta = {
-  file: File;
-  assessmentType: string | null;
-  assessmentNumber: number | null;
-  academicYear: number | null;
-  semester: number | null;
-  skip: boolean;
-};
+const MAX_FILES = 10;
+const MAX_BYTES = 3 * 1024 * 1024;
+
+function uploadOne(form: FormData, onProgress: (p: number) => void): Promise<{ status: number; json: any }> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", "/api/papers/upload");
+    xhr.upload.onprogress = (e) => e.lengthComputable && onProgress((e.loaded / e.total) * 90);
+    xhr.onload = () => {
+      try {
+        resolve({ status: xhr.status, json: JSON.parse(xhr.responseText) });
+      } catch {
+        resolve({ status: xhr.status, json: {} });
+      }
+    };
+    xhr.onerror = () => reject(new Error("Network error — check your connection."));
+    xhr.send(form);
+  });
+}
 
 export function UploadClient() {
-  const [selectedModule, setSelectedModule] = useState<ModuleOption | null>(null);
+  const params = useSearchParams();
+  const user = useSession();
+  const { toast } = useToast();
+  const [mod, setMod] = useState<ModuleOption | null>(null);
   const [files, setFiles] = useState<FileMeta[]>([]);
-  const [dragOver, setDragOver] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-  const [result, setResult] = useState<any>(null);
-  const [error, setError] = useState<string | null>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const [drag, setDrag] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [anon, setAnon] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+  const input = useRef<HTMLInputElement>(null);
+  const hp = useRef<HTMLInputElement>(null);
 
-  function addFiles(newFiles: FileList | File[]) {
-    const arr = Array.from(newFiles);
+  // Prefill from links such as /upload?module=MCI511S&year=2024&type=EXAM
+  useEffect(() => {
+    const code = params.get("module");
+    if (!code) return;
+    fetch(`/api/search?q=${encodeURIComponent(code)}&limit=1`)
+      .then((r) => r.json())
+      .then((j: any) => {
+        const m = j.data?.modules?.[0];
+        if (m && m.code.toUpperCase() === code.toUpperCase()) setMod({ code: m.code, name: m.name });
+      })
+      .catch(() => {});
+  }, [params]);
+
+  useEffect(() => {
+    if (user) setAnon(!!user.uploadAnonymously);
+  }, [user]);
+
+  const prefYear = Number(params.get("year")) || null;
+  const prefType = (params.get("type") || "").toUpperCase();
+
+  function addFiles(list: FileList | File[]) {
+    const incoming = Array.from(list);
+    const problems: string[] = [];
     const next: FileMeta[] = [];
-    for (const f of arr) {
-      if (f.type !== "application/pdf" && !f.name.toLowerCase().endsWith(".pdf")) {
-        setError(`"${f.name}" is not a PDF — only PDFs are allowed.`);
-        continue;
+    for (const f of incoming) {
+      if (!f.name.toLowerCase().endsWith(".pdf") && f.type !== "application/pdf") problems.push(`${f.name} isn't a PDF`);
+      else if (f.size > MAX_BYTES) problems.push(`${f.name} is over 3 MB`);
+      else if (f.size === 0) problems.push(`${f.name} is empty`);
+      else if (files.some((x) => x.file.name === f.name && x.file.size === f.size)) problems.push(`${f.name} is already added`);
+      else {
+        const s = parseFilename(f.name);
+        const type = s.assessmentType ?? ((ASSESSMENT_TYPES as readonly string[]).includes(prefType) ? prefType : "EXAM");
+        next.push({
+          key: `${f.name}-${f.size}-${Math.random()}`,
+          file: f,
+          assessmentType: type,
+          assessmentNumber: type === "EXAM" || type === "SUPPLEMENTARY" ? null : (s.assessmentNumber ?? 1),
+          academicYear: s.year ?? prefYear ?? new Date().getFullYear(),
+          semester: /s(em)?[_ -]?2|second/i.test(f.name) ? 2 : 1,
+          suggested: !!(s.year || s.assessmentType),
+          state: "ready",
+          progress: 0,
+        });
       }
-      if (f.size > 3 * 1024 * 1024) {
-        setError(`"${f.name}" is larger than the 3 MB limit.`);
-        continue;
-      }
-      if (f.size === 0) {
-        setError(`"${f.name}" appears to be empty.`);
-        continue;
-      }
-      const s = parseFilename(f.name);
-      next.push({
-        file: f,
-        assessmentType: s.assessmentType ?? null,
-        assessmentNumber: s.assessmentNumber ?? null,
-        academicYear: s.year ?? null,
-        semester: null, // not inferred from filename reliably
-        skip: false,
-      });
     }
-    setFiles((prev) => [...prev, ...next].slice(0, 10));
-    setError(null);
+    const room = MAX_FILES - files.length;
+    if (next.length > room) problems.push(`Only ${MAX_FILES} files per batch — ${next.length - room} skipped`);
+    setFiles((cur) => [...cur, ...next.slice(0, Math.max(0, room))]);
+    setNotice(problems.length ? problems.join(" · ") : null);
   }
 
-  function onInputChange(e: React.ChangeEvent<HTMLInputElement>) {
-    if (e.target.files) addFiles(e.target.files);
-    e.target.value = "";
-  }
+  const patch = (key: string, p: Partial<FileMeta>) => setFiles((cur) => cur.map((f) => (f.key === key ? { ...f, ...p } : f)));
 
-  function onDrop(e: React.DragEvent) {
-    e.preventDefault();
-    setDragOver(false);
-    if (e.dataTransfer.files) addFiles(e.dataTransfer.files);
-  }
-
-  function updateFile(idx: number, patch: Partial<FileMeta>) {
-    setFiles((prev) => prev.map((f, i) => (i === idx ? { ...f, ...patch } : f)));
-  }
-
-  function removeFile(idx: number) {
-    setFiles((prev) => prev.filter((_, i) => i !== idx));
-  }
-
-  async function onSubmit() {
-    if (!selectedModule) {
-      setError("Please select a module first.");
-      return;
-    }
-    if (files.length === 0) {
-      setError("Please select at least one PDF.");
-      return;
-    }
-    setSubmitting(true);
-    setError(null);
-    setResult(null);
-    try {
+  async function submit() {
+    if (!mod) return;
+    setBusy(true);
+    let added = 0;
+    for (const f of files) {
+      if (f.state !== "ready" && f.state !== "error") continue;
+      patch(f.key, { state: "uploading", progress: 3, message: undefined });
       const form = new FormData();
-      form.set("moduleId", selectedModule.code);
-      const metadata = files.map((f) => ({
-        filename: f.file.name,
-        assessmentType: f.skip ? null : f.assessmentType,
-        assessmentNumber: f.skip ? null : f.assessmentNumber,
-        academicYear: f.skip ? null : f.academicYear,
-        semester: f.skip ? null : f.semester,
-      }));
-      form.set("metadata", JSON.stringify(metadata));
-      for (const f of files) form.append("files", f.file);
-
-      const res = await fetch("/api/papers/upload", { method: "POST", body: form });
-      const json = (await res.json()) as any;
-      if (!res.ok) {
-        setError(json.error?.message || "Upload failed.");
-      } else {
-        setResult(json);
-        // Clear files on success? Keep for review
-        if (json.summary?.added > 0) {
-          // Optionally clear
+      form.set("moduleId", mod.code);
+      form.set("website", hp.current?.value ?? "");
+      if (user) form.set("anonymous", anon ? "1" : "0");
+      form.set("metadata", JSON.stringify([{ filename: f.file.name, assessmentType: f.assessmentType, assessmentNumber: f.assessmentNumber, academicYear: f.academicYear, semester: f.semester }]));
+      form.append("files", f.file);
+      try {
+        const { status, json } = await uploadOne(form, (p) => patch(f.key, { progress: p }));
+        if (status >= 400) {
+          patch(f.key, { state: "error", message: json.error?.message || "Upload failed." });
+          if (status === 429) break;
+          continue;
         }
+        const r = json.results?.[0];
+        if (r?.status === "added") {
+          added++;
+          patch(f.key, { state: "added", progress: 100, message: "Added — thank you!", paperId: r.paperId });
+        } else if (r?.status === "duplicate") patch(f.key, { state: "duplicate", progress: 100, message: "We already have this file.", paperId: r.paperId });
+        else patch(f.key, { state: "error", message: r?.message || "Upload failed." });
+      } catch (e: any) {
+        patch(f.key, { state: "error", message: e?.message || "Upload failed." });
       }
-    } catch (e: any) {
-      setError(e.message || "Upload failed.");
-    } finally {
-      setSubmitting(false);
     }
+    setBusy(false);
+    if (added) toast({ tone: "success", title: `${added} paper${added === 1 ? "" : "s"} added to ${mod.code}`, description: "Thank you for helping the next student ❤️" });
   }
+
+  const pending = files.filter((f) => f.state === "ready" || f.state === "error").length;
+  const done = files.length > 0 && pending === 0 && !busy;
+  const addedCount = files.filter((f) => f.state === "added").length;
 
   return (
     <div className="space-y-6">
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">1. Select module (required)</CardTitle>
-          <CardDescription>Every paper must have at least one reliable academic anchor.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <ModuleSelector value={selectedModule} onSelect={setSelectedModule} />
-          {!selectedModule && <p className="mt-2 text-xs text-amber-600">Upload is disabled until a valid module is selected.</p>}
-        </CardContent>
-      </Card>
+      <section className="rounded-3xl border bg-card p-5 sm:p-6">
+        <h2 className="flex items-center gap-2 font-semibold"><span className="flex size-6 items-center justify-center rounded-full bg-primary text-xs text-primary-foreground">1</span> Which module?</h2>
+        <p className="mb-4 mt-1 text-sm text-muted-foreground">The code is on the cover page, e.g. MCI511S.</p>
+        <ModuleSelector value={mod} onSelect={setMod} />
+      </section>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">2. Select PDFs</CardTitle>
-          <CardDescription>Up to 10 files, 3 MB each. Drag & drop or click to browse.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div
-            onDragOver={(e) => {
-              e.preventDefault();
-              setDragOver(true);
-            }}
-            onDragLeave={() => setDragOver(false)}
-            onDrop={onDrop}
-            className={`rounded-2xl border-2 border-dashed p-8 text-center transition-colors ${dragOver ? "border-primary bg-accent" : "border-muted-foreground/20 hover:border-muted-foreground/40"} ${!selectedModule ? "opacity-50 pointer-events-none" : ""}`}
-          >
-            <p className="text-sm font-medium">Drop PDFs here</p>
-            <p className="mt-1 text-xs text-muted-foreground">or</p>
-            <button
-              onClick={() => inputRef.current?.click()}
-              disabled={!selectedModule}
-              className="mt-3 inline-flex items-center justify-center rounded-xl border bg-background px-4 py-2 text-sm font-medium hover:bg-accent disabled:opacity-50 min-h-[44px]"
-            >
-              Browse files
-            </button>
-            <input ref={inputRef} type="file" accept=".pdf" multiple onChange={onInputChange} className="hidden" disabled={!selectedModule} />
-            <p className="mt-3 text-xs text-muted-foreground">Max 3 MB per file · Only PDFs</p>
-          </div>
-
-          {error && <p className="mt-3 text-sm text-destructive">{error}</p>}
-
-          {files.length > 0 && (
-            <div className="mt-6 space-y-4">
-              <div className="flex items-center justify-between">
-                <p className="text-sm font-medium">{files.length} file{files.length > 1 ? "s" : ""} selected</p>
-                <button onClick={() => setFiles([])} className="text-xs hover:underline text-muted-foreground">
-                  Clear all
-                </button>
-              </div>
-              {files.map((meta, idx) => (
-                <FileCard key={`${meta.file.name}-${idx}`} meta={meta} onChange={(p) => updateFile(idx, p)} onRemove={() => removeFile(idx)} />
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      <div className="flex gap-3">
-        <button
-          onClick={onSubmit}
-          disabled={!selectedModule || files.length === 0 || submitting}
-          className="inline-flex items-center justify-center rounded-xl bg-primary px-6 py-3 text-sm font-medium text-primary-foreground hover:bg-slate-800 disabled:opacity-50 min-h-[44px] flex-1 sm:flex-none"
+      <section className={cn("rounded-3xl border bg-card p-5 transition-opacity sm:p-6", !mod && "pointer-events-none opacity-50")} aria-disabled={!mod}>
+        <h2 className="flex items-center gap-2 font-semibold"><span className="flex size-6 items-center justify-center rounded-full bg-primary text-xs text-primary-foreground">2</span> Add PDFs</h2>
+        <p className="mb-4 mt-1 text-sm text-muted-foreground">Up to {MAX_FILES} files, 3 MB each. Name files like <span className="font-mono">MCI511S_2024_Test_1.pdf</span> and we&apos;ll fill in the details.</p>
+        <div
+          onDragOver={(e) => {
+            e.preventDefault();
+            setDrag(true);
+          }}
+          onDragLeave={() => setDrag(false)}
+          onDrop={(e) => {
+            e.preventDefault();
+            setDrag(false);
+            if (mod) addFiles(e.dataTransfer.files);
+          }}
+          onClick={() => mod && input.current?.click()}
+          onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && mod && input.current?.click()}
+          role="button"
+          tabIndex={mod ? 0 : -1}
+          className={cn("flex cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed px-6 py-10 text-center transition-colors", drag ? "border-info bg-info-soft" : "border-input hover:border-muted-foreground/60 hover:bg-accent/40")}
         >
-          {submitting ? "Uploading…" : `Upload ${files.length ? `(${files.length})` : ""}`}
-        </button>
+          <CloudUpload className={cn("size-10", drag ? "text-info" : "text-muted-foreground")} />
+          <p className="mt-3 font-medium">{drag ? "Drop to add" : "Drag PDFs here, or tap to choose"}</p>
+          <p className="mt-1 text-xs text-muted-foreground">PDF only · max 3 MB each</p>
+          <input ref={input} type="file" accept="application/pdf,.pdf" multiple className="hidden" onChange={(e) => { if (e.target.files) addFiles(e.target.files); e.target.value = ""; }} />
+        </div>
+        <input ref={hp} name="website" tabIndex={-1} autoComplete="off" className="hidden" aria-hidden="true" />
+        {notice && <p className="mt-3 text-sm text-warning" role="status">{notice}</p>}
+
         {files.length > 0 && (
-          <button onClick={() => setFiles([])} className="inline-flex items-center justify-center rounded-xl border bg-background px-5 py-3 text-sm font-medium hover:bg-accent min-h-[44px]">
-            Cancel
-          </button>
-        )}
-      </div>
-
-      {!selectedModule && files.length === 0 && (
-        <p className="text-xs text-muted-foreground">Select a module above to enable upload. Help keep NustWeShare organized ❤️ — adding year and type makes papers easier to find.</p>
-      )}
-
-      {result && (
-        <Card className="border-emerald-200 bg-emerald-50/50">
-          <CardHeader>
-            <CardTitle className="text-base">Thank you for contributing to NustWeShare ❤️</CardTitle>
-            <CardDescription>
-              Papers uploaded: {result.summary?.total ?? files.length} · Successfully added: {result.summary?.added ?? 0} · Potential duplicates: {result.summary?.duplicates ?? 0}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-2 text-sm">
-            {result.results?.map((r: any, i: number) => (
-              <div key={i} className="flex items-center justify-between rounded-xl border bg-card px-3 py-2">
-                <span className="font-mono text-xs truncate">{r.filename}</span>
-                <span className="flex items-center gap-2">
-                  {r.status === "added" && <Badge>Added</Badge>}
-                  {r.status === "duplicate" && <Badge variant="outline">Possible duplicate</Badge>}
-                  {r.status === "error" && <Badge variant="outline">{r.message}</Badge>}
-                </span>
-              </div>
+          <div className="mt-5 space-y-3">
+            {files.map((f) => (
+              <FileCard
+                key={f.key}
+                meta={f}
+                onChange={(p) => patch(f.key, p)}
+                onRemove={() => setFiles((cur) => cur.filter((x) => x.key !== f.key))}
+                canApplyAll={files.length > 1}
+                onApplyAll={() => setFiles((cur) => cur.map((x) => (x.state === "ready" ? { ...x, academicYear: f.academicYear, semester: f.semester } : x)))}
+              />
             ))}
-            {result.summary?.duplicates > 0 && (
-              <p className="text-xs text-muted-foreground">
-                Possible duplicate detected — an existing paper appears to contain the same assessment. If you believe it&apos;s a different paper, you can upload anyway (contact support for force upload).
-              </p>
-            )}
-            <p className="text-xs text-muted-foreground">You contributed {selectedModule ? `for ${selectedModule.code}` : "anonymously"}.</p>
-          </CardContent>
-        </Card>
+          </div>
+        )}
+      </section>
+
+      {done ? (
+        <div className="rounded-3xl border border-success/40 bg-success-soft/40 p-6 text-center">
+          <PartyPopper className="mx-auto size-8 text-success" />
+          <p className="mt-2 text-lg font-semibold">{addedCount ? `You shared ${addedCount} paper${addedCount === 1 ? "" : "s"}!` : "All done"}</p>
+          <p className="mt-1 text-sm text-muted-foreground">Every paper helps the next NUST student.</p>
+          <div className="mt-5 flex flex-wrap justify-center gap-2">
+            {mod && <Link href={`/modules/${mod.code.toLowerCase()}`} className={buttonVariants()}>View {mod.code}</Link>}
+            <Button variant="outline" onClick={() => setFiles([])}><RotateCcw /> Upload more</Button>
+          </div>
+        </div>
+      ) : (
+        <div className="flex flex-col gap-4 rounded-3xl border bg-card p-5 sm:flex-row sm:items-center sm:p-6">
+          {user ? (
+            <label className="flex flex-1 items-center gap-3 text-sm">
+              <Switch checked={anon} onCheckedChange={setAnon} label="Upload anonymously" />
+              <span>
+                <span className="flex items-center gap-1.5 font-medium"><EyeOff className="size-4" /> Hide my name on these papers</span>
+                <span className="block text-xs text-muted-foreground">They still appear in your dashboard.</span>
+              </span>
+            </label>
+          ) : (
+            <p className="flex-1 text-sm text-muted-foreground">
+              Uploading as a guest. <Link href="/register?next=/upload" className="font-medium text-info hover:underline">Create a profile</Link> to get credit on the leaderboard.
+            </p>
+          )}
+          <Button size="lg" variant="brand" onClick={submit} disabled={!mod || pending === 0 || busy} loading={busy}>
+            {busy ? "Uploading…" : <><Heart /> Share {pending || ""} paper{pending === 1 ? "" : "s"}</>}
+          </Button>
+        </div>
       )}
+      <p className="text-xs text-muted-foreground">
+        By uploading you confirm the file is a past assessment you&apos;re allowed to share. Duplicates are detected automatically. See our <Link href="/copyright" className="underline">copyright policy</Link>.
+      </p>
     </div>
   );
 }

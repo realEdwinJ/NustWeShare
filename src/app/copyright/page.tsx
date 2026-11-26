@@ -1,32 +1,28 @@
-import { Container } from "@/components/ui/container";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { ProsePage } from "@/components/layout/ProsePage";
 
-export const metadata = { title: "Copyright & Takedown" };
+export const metadata = { title: "Copyright & takedown" };
 
 export default function CopyrightPage() {
   return (
-    <Container className="py-8 max-w-3xl">
-      <h1 className="text-2xl font-bold tracking-tight">Copyright & Takedown</h1>
-      <p className="mt-1 text-sm text-muted-foreground">
-        NustWeShare is an independent student/community project and is not affiliated with, operated by, or officially
-        endorsed by NUST unless explicit permission is obtained.
-      </p>
-      <Card className="mt-6">
-        <CardHeader>
-          <CardTitle className="text-base">If you believe a document should be removed</CardTitle>
-        </CardHeader>
-        <CardContent className="text-sm leading-relaxed text-muted-foreground space-y-3">
-          <p>
-            We respect copyright. If you are a rights holder and believe a paper should be removed, please contact us
-            with the paper URL, your relationship to the material, and the reason. This is a lightweight,
-            community-maintained process (Spec 89) — no automated legal advice, just a reasonable takedown channel.
-          </p>
-          <p>
-            Contact: <a href="/contact" className="underline hover:text-foreground">/contact</a> — we will review and
-            remove where appropriate. Unresolved disputes will default to removal to respect rights holders.
-          </p>
-        </CardContent>
-      </Card>
-    </Container>
+    <ProsePage title="Copyright & takedown" intro="NustWeShare is an independent student project. It is not affiliated with, operated by or endorsed by the Namibia University of Science and Technology." updated="November 2026">
+      <section>
+        <h2>What belongs here</h2>
+        <p>Past assessments — tests, exams, supplementaries, quizzes, assignments, labs and tutorials — shared by students for revision. Please don&apos;t upload textbooks, lecture slides you weren&apos;t given permission to share, or personal information.</p>
+      </section>
+      <section>
+        <h2>Requesting removal</h2>
+        <p>If you hold rights to a document, or believe it shouldn&apos;t be public, tell us:</p>
+        <ul>
+          <li>the paper link (e.g. <span className="font-mono text-sm">/papers/…</span>),</li>
+          <li>your relationship to the material, and</li>
+          <li>why it should be removed.</li>
+        </ul>
+        <p className="mt-3">Open a takedown issue on <a href="https://github.com/realEdwinJ/NustWeShare/issues/new?title=Takedown%20request" target="_blank" rel="noopener noreferrer">GitHub</a>. We review requests promptly and, where in doubt, remove the paper.</p>
+      </section>
+      <section>
+        <h2>Community moderation</h2>
+        <p>Every paper has a Report button. Moderators review reports, and a paper that receives five independent reports is taken down automatically and its file deleted.</p>
+      </section>
+    </ProsePage>
   );
 }
