@@ -3,6 +3,8 @@ import { Compass } from "lucide-react";
 import { Container } from "@/components/ui/container";
 import { buttonVariants } from "@/components/ui/button";
 
+export const metadata = { title: "Page not found", robots: { index: false } };
+
 export default function NotFound() {
   return (
     <Container className="flex min-h-[60vh] flex-col items-center justify-center py-16 text-center">

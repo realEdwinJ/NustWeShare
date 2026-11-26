@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { Check, ShieldCheck, Trash2 } from "lucide-react";
+import { Check, HardDriveDownload, ShieldCheck, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -26,10 +26,28 @@ export function AdminClient() {
     setRows((rs) => (action === "dismiss" ? rs?.filter((x) => x.paperId !== id) ?? null : rs?.map((x) => (x.paperId === id ? { ...x, status: "deleted" } : x)) ?? null));
   }
 
+  const [scanning, setScanning] = useState(false);
+  async function scan() {
+    setScanning(true);
+    try {
+      const r = await fetch("/api/admin/integrity", { method: "POST" });
+      const j = (await r.json()) as any;
+      if (!r.ok) throw new Error(j.error?.message);
+      toast({ tone: j.data.hidden ? "info" : "success", title: `Checked ${j.data.checked} files`, description: j.data.hidden ? `${j.data.hidden} paper(s) had missing files and were hidden until re-uploaded.` : "Every file is present in storage." });
+    } catch (e: any) {
+      toast({ tone: "error", title: e?.message || "Scan failed" });
+    } finally {
+      setScanning(false);
+    }
+  }
+
   const shown = rows?.filter((r) => (filter === "open" ? r.status !== "deleted" : r.status === "deleted")) ?? [];
   return (
     <section className="mt-8">
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
+        <Button size="sm" variant="outline" onClick={scan} loading={scanning} className="order-last ml-auto">
+          <HardDriveDownload /> Check storage integrity
+        </Button>
         {(["open", "removed"] as const).map((f) => (
           <Button key={f} size="sm" variant={filter === f ? "secondary" : "ghost"} onClick={() => setFilter(f)} className="capitalize">{f}</Button>
         ))}

@@ -4,7 +4,7 @@ import { getDb } from "@/lib/db";
 import { papers } from "@/db/schema/papers";
 import { reports } from "@/db/schema/reports";
 import { hashIp } from "@/lib/security/sanitize";
-import { rateLimit, limits } from "@/lib/security/rateLimit";
+import { rateLimitShared, limits } from "@/lib/security/rateLimit";
 import { logger } from "@/lib/logger";
 import { removePaper } from "@/lib/papers/moderation";
 import { getUserFromRequest } from "@/lib/auth/current";
@@ -20,7 +20,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const ip = getClientIp(req);
   const ipHash = hashIp(ip);
 
-  const rl = rateLimit({ key: `report:${ipHash.slice(0, 16)}`, limit: limits.report.limit, windowMs: limits.report.windowMs });
+  const rl = await rateLimitShared({ key: `report:${ipHash.slice(0, 16)}`, limit: limits.report.limit, windowMs: limits.report.windowMs });
   if (!rl.allowed) {
     return NextResponse.json({ error: { code: "RATE_LIMITED", message: "Too many reports. Try again soon." } }, { status: 429 });
   }

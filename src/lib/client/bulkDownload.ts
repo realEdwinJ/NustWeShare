@@ -29,7 +29,7 @@ export function saveBlob(blob: Blob, filename: string) {
 export async function downloadAsZip(
   files: BulkFile[],
   zipName: string,
-  opts: { signal?: AbortSignal; onProgress?: (p: BulkProgress) => void; groupByFolder?: boolean; readme?: string } = {}
+  opts: { signal?: AbortSignal; onProgress?: (p: BulkProgress) => void; groupByFolder?: boolean; readme?: (info: { saved: string[]; failed: string[] }) => string } = {}
 ) {
   const total = files.length;
   const totalBytes = files.reduce((s, f) => s + (f.size ?? 0), 0);
@@ -89,7 +89,7 @@ export async function downloadAsZip(
   report("zipping");
   const names = uniqueNames(ok.map((r) => r.name));
   const entries = ok.map((r, i) => ({ name: names[i], data: r.data }));
-  if (opts.readme) entries.push({ name: "README.txt", data: new TextEncoder().encode(opts.readme) });
+  if (opts.readme) entries.push({ name: "README.txt", data: new TextEncoder().encode(opts.readme({ saved: names, failed })) });
   const parts = buildZip(entries, "Downloaded from NustWeShare");
   report("saving");
   saveBlob(new Blob(parts as BlobPart[], { type: "application/zip" }), zipName);

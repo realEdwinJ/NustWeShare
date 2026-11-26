@@ -94,17 +94,26 @@ export function ModulePapers({ moduleCode, moduleName, papers, savedIds = [] }: 
         size: p.fileSize,
       }));
   }
-  const readme = (n: number) =>
-    `${moduleCode} — ${moduleName}\n${n} past paper(s) downloaded from NustWeShare on ${new Date().toLocaleDateString("en-GB")}.\n\nShared by students, for students. Have a paper that's missing? Upload it at ${typeof location !== "undefined" ? location.origin : ""}/upload?module=${moduleCode}\n`;
+  const readme = ({ saved, failed }: { saved: string[]; failed: string[] }) =>
+    [
+      `${moduleCode} — ${moduleName}`,
+      `${saved.length} past paper${saved.length === 1 ? "" : "s"} downloaded from NustWeShare on ${new Date().toLocaleDateString("en-GB", { timeZone: "Africa/Windhoek" })}.`,
+      "",
+      ...saved.map((n) => `  • ${n}`),
+      ...(failed.length ? ["", `${failed.length} file${failed.length === 1 ? "" : "s"} couldn't be included:`, ...failed.map((n) => `  • ${n}`)] : []),
+      "",
+      `Shared by students, for students. Missing a paper? Upload it at ${typeof location !== "undefined" ? location.origin : ""}/upload?module=${moduleCode}`,
+      "",
+    ].join("\n");
 
   function downloadAll() {
     const list = filtersActive ? filtered : papers;
     const suffix = filtersActive ? [year !== "all" ? year : "", type !== "all" ? TYPE_LABEL[type as AssessmentType] : "", sem !== "all" ? `S${sem}` : ""].filter(Boolean).join("_") : "all";
-    zip.start(toFiles(list), `${moduleCode}_past_papers_${suffix}.zip`, readme(list.length));
+    zip.start(toFiles(list), `${moduleCode}_past_papers_${suffix}.zip`, readme);
   }
   function downloadSelected() {
     const list = papers.filter((p) => selected.has(p.id));
-    zip.start(toFiles(list), `${moduleCode}_selected_${list.length}.zip`, readme(list.length));
+    zip.start(toFiles(list), `${moduleCode}_selected_${list.length}.zip`, readme);
   }
 
   if (papers.length === 0) {

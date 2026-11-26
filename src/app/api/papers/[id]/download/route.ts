@@ -7,6 +7,15 @@ import { getCanonicalFile } from "@/lib/papers/canonical";
 import { serveStoredFile } from "@/lib/r2/serve";
 import { downloadFilename } from "@/lib/papers/format";
 import { isUuid, jsonError } from "@/lib/http";
+import { handleMissingFile } from "@/lib/papers/moderation";
+
+/** Browsers get sent back to the paper page with an explanation; API clients get JSON. */
+function missingResponse(req: NextRequest, id: string) {
+  if ((req.headers.get("accept") || "").includes("text/html") && !req.headers.get("range")) {
+    return NextResponse.redirect(new URL(`/papers/${id}?missing=1`, req.url), 303);
+  }
+  return jsonError("FILE_MISSING", "This paper's file is missing from storage. It has been hidden until someone re-uploads it.", 404);
+}
 
 export const dynamic = "force-dynamic";
 
@@ -26,21 +35,24 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     const p = rows[0];
     if (!p) return jsonError("NOT_FOUND", "Paper not found.", 404);
     if (p.status === "deleted") return jsonError("PAPER_DELETED", "This paper is no longer available.", 410);
+    if (p.status !== "active") return missingResponse(req, id);
     const file = await getCanonicalFile(id);
-    if (!file) return jsonError("NOT_FOUND", "File not found.", 404);
+    if (!file) return missingResponse(req, id);
 
     const cookieName = `dl_${id.slice(0, 8)}`;
     const range = req.headers.get("range");
     const isContinuation = !!range && !/^bytes=0-/.test(range);
     const already = req.cookies.get(cookieName)?.value === "1";
-    const shouldCount = !already && !isContinuation;
-    if (shouldCount) {
-      await db.update(papers).set({ downloads: sql`${papers.downloads} + 1` }).where(eq(papers.id, id));
-    }
 
     const name = req.nextUrl.searchParams.get("name") === "original" ? file.originalFilename : downloadFilename(p);
     const res = await serveStoredFile(req, file.r2ObjectKey, { disposition: "attachment", filename: name, cacheControl: "private, no-cache" });
-    if (shouldCount && res.status < 300) {
+    if (res.status === 404) {
+      await handleMissingFile(id).catch(() => {});
+      return missingResponse(req, id);
+    }
+    // Count only real, first-time, successful downloads (not 304s, failures or resumed ranges)
+    if (!already && !isContinuation && (res.status === 200 || res.status === 206)) {
+      await db.update(papers).set({ downloads: sql`${papers.downloads} + 1` }).where(eq(papers.id, id));
       const out = new NextResponse(res.body, { status: res.status, headers: res.headers });
       out.cookies.set(cookieName, "1", { httpOnly: true, sameSite: "lax", maxAge: 3600, path: "/" });
       return out;

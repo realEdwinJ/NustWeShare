@@ -8,6 +8,7 @@ import { Input, Label, FieldHint, FieldError } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
 import { weakPinReason } from "@/lib/account/validation";
+import { RecoveryCodeDialog } from "./RecoveryCodeDialog";
 
 function safeNext(n: string | null) {
   return n && n.startsWith("/") && !n.startsWith("//") ? n : "/dashboard";
@@ -48,6 +49,7 @@ export function RegisterForm() {
   const [pin2, setPin2] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [recovery, setRecovery] = useState<string | null>(null);
   const router = useRouter();
   const params = useSearchParams();
   const { toast } = useToast();
@@ -64,8 +66,11 @@ export function RegisterForm() {
       const json = (await res.json()) as any;
       if (!res.ok) return setError(json.error?.message || "Couldn't create your profile.");
       toast({ tone: "success", title: `Welcome, ${json.data.displayName}!`, description: "Your uploads will now count towards your profile." });
-      router.push(safeNext(params.get("next")));
-      router.refresh();
+      if (json.data.recoveryCode) setRecovery(json.data.recoveryCode);
+      else {
+        router.push(safeNext(params.get("next")));
+        router.refresh();
+      }
     } catch {
       setError("Network error. Please try again.");
     } finally {
@@ -89,11 +94,22 @@ export function RegisterForm() {
         <PinInput id="r-pin" value={pin} onChange={setPin} autoComplete="new-password" invalid={!!weak} />
         <PinInput id="r-pin2" value={pin2} onChange={setPin2} autoComplete="new-password" label="Confirm PIN" invalid={mismatch} />
       </div>
-      {weak ? <FieldError>{weak}</FieldError> : mismatch ? <FieldError>PINs don&apos;t match.</FieldError> : <FieldHint className="-mt-3">No email, no phone number. Remember your PIN — there&apos;s no reset by email.</FieldHint>}
+      {weak ? <FieldError>{weak}</FieldError> : mismatch ? <FieldError>PINs don&apos;t match.</FieldError> : <FieldHint className="-mt-3">No email or phone number. You&apos;ll get a one-time recovery code in case you forget your PIN.</FieldHint>}
       {error && <p role="alert" className="rounded-xl bg-destructive-soft px-3.5 py-2.5 text-sm text-destructive">{error}</p>}
       <Button type="submit" loading={loading} className="w-full" size="lg" disabled={username.length < 3 || pin.length !== 5 || pin !== pin2 || !!weak}>
         Create profile
       </Button>
+      {recovery && (
+        <RecoveryCodeDialog
+          open
+          code={recovery}
+          username={username}
+          onDone={() => {
+            router.push(safeNext(params.get("next")));
+            router.refresh();
+          }}
+        />
+      )}
       <p className="text-center text-sm text-muted-foreground">
         Already have one? <Link href={`/login${params.get("next") ? `?next=${encodeURIComponent(params.get("next")!)}` : ""}`} className="font-medium text-info hover:underline">Log in</Link>
       </p>
@@ -138,7 +154,10 @@ export function LoginForm() {
         <Label htmlFor="l-user">Username</Label>
         <Input id="l-user" value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username" required className="mt-1.5" autoFocus />
       </div>
-      <PinInput id="l-pin" value={pin} onChange={setPin} autoComplete="current-password" label="PIN" />
+      <div>
+        <PinInput id="l-pin" value={pin} onChange={setPin} autoComplete="current-password" label="PIN" />
+        <Link href="/reset" className="mt-1.5 inline-block text-xs font-medium text-info hover:underline">Forgot your PIN?</Link>
+      </div>
       <label className="flex items-center gap-2 text-sm">
         <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} className="size-4 accent-[var(--info)]" /> Keep me signed in for 30 days
       </label>
@@ -149,6 +168,74 @@ export function LoginForm() {
       <p className="text-center text-sm text-muted-foreground">
         New here? <Link href="/register" className="font-medium text-info hover:underline">Create a free profile</Link>
       </p>
+    </form>
+  );
+}
+
+export function ResetForm() {
+  const [username, setUsername] = useState("");
+  const [code, setCode] = useState("");
+  const [pin, setPin] = useState("");
+  const [pin2, setPin2] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [newCode, setNewCode] = useState<string | null>(null);
+  const router = useRouter();
+  const { toast } = useToast();
+  const weak = pin.length === 5 ? weakPinReason(pin) : null;
+
+  async function onSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (pin !== pin2) return setError("PINs don't match.");
+    setError(null);
+    setLoading(true);
+    try {
+      const res = await fetch("/api/auth/recover", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username, code, newPin: pin }) });
+      const json = (await res.json()) as any;
+      if (!res.ok) return setError(json.error?.message || "Couldn't reset your PIN.");
+      toast({ tone: "success", title: "PIN reset — you're signed in", description: "All other devices were signed out." });
+      setNewCode(json.data.recoveryCode);
+    } catch {
+      setError("Network error. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <form onSubmit={onSubmit} className="space-y-5">
+      <div>
+        <Label htmlFor="rs-user">Username</Label>
+        <Input id="rs-user" value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username" required className="mt-1.5" autoFocus />
+      </div>
+      <div>
+        <Label htmlFor="rs-code">Recovery code</Label>
+        <Input id="rs-code" value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} placeholder="XXXXX-XXXXX-XXXXX" autoComplete="one-time-code" required className="mt-1.5 font-mono tracking-wider" />
+        <FieldHint>Shown once when you created your profile (or in Settings → Security).</FieldHint>
+      </div>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <PinInput id="rs-pin" value={pin} onChange={setPin} autoComplete="new-password" label="New PIN" invalid={!!weak} />
+        <PinInput id="rs-pin2" value={pin2} onChange={setPin2} autoComplete="new-password" label="Confirm new PIN" invalid={pin2.length === 5 && pin !== pin2} />
+      </div>
+      {weak && <FieldError>{weak}</FieldError>}
+      {error && <p role="alert" className="rounded-xl bg-destructive-soft px-3.5 py-2.5 text-sm text-destructive">{error}</p>}
+      <Button type="submit" loading={loading} className="w-full" size="lg" disabled={!username || code.length < 12 || pin.length !== 5 || pin !== pin2 || !!weak}>
+        Reset PIN
+      </Button>
+      <p className="text-center text-sm text-muted-foreground">
+        Lost your code too? <Link href="/contact" className="font-medium text-info hover:underline">Contact a moderator</Link>
+      </p>
+      {newCode && (
+        <RecoveryCodeDialog
+          open
+          code={newCode}
+          username={username}
+          onDone={() => {
+            router.push("/dashboard");
+            router.refresh();
+          }}
+        />
+      )}
     </form>
   );
 }

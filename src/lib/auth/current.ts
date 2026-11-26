@@ -19,6 +19,7 @@ export type CurrentUser = {
   createdAt: Date;
   lastLoginAt: Date | null;
   pinChangedAt: Date | null;
+  recoveryCreatedAt: Date | null;
   sessionVersion: number;
 };
 
@@ -49,6 +50,7 @@ async function resolveToken(token: string | undefined): Promise<CurrentUser | nu
         createdAt: users.createdAt,
         lastLoginAt: users.lastLoginAt,
         pinChangedAt: users.pinChangedAt,
+        recoveryCreatedAt: users.recoveryCreatedAt,
         sessionVersion: users.sessionVersion,
       })
       .from(users)

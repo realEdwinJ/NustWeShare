@@ -7,6 +7,7 @@ import { getCanonicalFile } from "@/lib/papers/canonical";
 import { serveStoredFile } from "@/lib/r2/serve";
 import { downloadFilename } from "@/lib/papers/format";
 import { isUuid } from "@/lib/http";
+import { handleMissingFile } from "@/lib/papers/moderation";
 
 export const dynamic = "force-dynamic";
 
@@ -25,9 +26,12 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     const p = rows[0];
     if (!p) return new NextResponse("Not found", { status: 404 });
     if (p.status === "deleted") return new NextResponse("Gone", { status: 410 });
+    if (p.status !== "active") return new NextResponse("Not found", { status: 404 });
     const file = await getCanonicalFile(id);
     if (!file) return new NextResponse("Not found", { status: 404 });
-    return serveStoredFile(req, file.r2ObjectKey, { disposition: "inline", filename: downloadFilename(p), cacheControl: "public, max-age=3600" });
+    const res = await serveStoredFile(req, file.r2ObjectKey, { disposition: "inline", filename: downloadFilename(p), cacheControl: "public, max-age=3600" });
+    if (res.status === 404) await handleMissingFile(id).catch(() => {});
+    return res;
   } catch (e) {
     console.error("[api/papers/[id]/file]", e);
     return new NextResponse("Storage error", { status: 500 });

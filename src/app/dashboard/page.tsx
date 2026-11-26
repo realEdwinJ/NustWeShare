@@ -8,7 +8,7 @@ import { Avatar } from "@/components/ui/avatar";
 import { EmptyState } from "@/components/ui/empty-state";
 import { getCurrentUser } from "@/lib/auth/current";
 import { getLeaderboard, listUserUploads } from "@/lib/papers/queries";
-import { compactNumber } from "@/lib/papers/format";
+import { compactNumber, formatDate } from "@/lib/papers/format";
 import { MyUploads } from "./MyUploads";
 
 export const dynamic = "force-dynamic";
@@ -32,7 +32,7 @@ export default async function DashboardPage() {
       <PageHeader
         eyebrow={<Avatar name={user.displayName} color={user.avatarColor} emoji={user.avatarEmoji} size="lg" />}
         title={`Hi, ${user.displayName}`}
-        description={<>@{user.username} · member since {user.createdAt.toLocaleDateString("en-GB", { month: "long", year: "numeric" })}</>}
+        description={<>@{user.username} · member since {formatDate(user.createdAt, { month: "long", year: "numeric" })}</>}
         actions={
           <>
             <Link href={`/u/${user.username}`} className={buttonVariants({ variant: "outline" })}><User /> Public profile</Link>

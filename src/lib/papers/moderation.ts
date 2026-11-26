@@ -51,3 +51,32 @@ export async function identityTaken(p: { id: string; moduleId: string; academicY
     .limit(1);
   return rows[0]?.id ?? null;
 }
+
+/** True if the stored object exists. */
+export async function storedFileExists(key: string): Promise<boolean> {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { getCloudflareContext } = require("@opennextjs/cloudflare");
+    const bucket = getCloudflareContext()?.env?.PAPERS_BUCKET;
+    if (bucket) return !!(await bucket.head(key));
+  } catch {}
+  const storage = getStorage();
+  return (await storage.get(key)) !== null;
+}
+
+/**
+ * Called when a paper's file can't be found in storage. If none of its files exist, the paper is hidden
+ * (status "pending", reason "file_missing") so it stops appearing as downloadable; re-uploading heals it.
+ * Returns true if the paper was hidden.
+ */
+export async function handleMissingFile(paperId: string): Promise<boolean> {
+  const db = getDb();
+  const files = await db.select({ key: paperFiles.r2ObjectKey }).from(paperFiles).where(eq(paperFiles.paperId, paperId));
+  for (const f of files) if (await storedFileExists(f.key)) return false;
+  await db
+    .update(papers)
+    .set({ status: "pending", deletionReason: "file_missing", updatedAt: new Date() })
+    .where(and(eq(papers.id, paperId), eq(papers.status, "active")));
+  console.warn("[integrity] paper hidden, file missing", { paperId });
+  return true;
+}

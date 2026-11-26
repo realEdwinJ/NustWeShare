@@ -18,8 +18,10 @@ const REASONS = [
   { value: "other", label: "Something else", hint: "Copyright, offensive content, other" },
 ] as const;
 
-export function ReportDialog({ paperId, variant = "ghost" }: { paperId: string; variant?: ButtonVariant }) {
-  const [open, setOpen] = useState(false);
+export function ReportDialog({ paperId, variant = "ghost", open: openProp, onOpenChange, hideTrigger }: { paperId: string; variant?: ButtonVariant; open?: boolean; onOpenChange?: (v: boolean) => void; hideTrigger?: boolean }) {
+  const [openState, setOpenState] = useState(false);
+  const open = openProp ?? openState;
+  const setOpen = (v: boolean) => (onOpenChange ? onOpenChange(v) : setOpenState(v));
   const [reason, setReason] = useState<string>("");
   const [details, setDetails] = useState("");
   const [busy, setBusy] = useState(false);
@@ -60,9 +62,11 @@ export function ReportDialog({ paperId, variant = "ghost" }: { paperId: string; 
 
   return (
     <>
-      <Button variant={variant} onClick={() => setOpen(true)}>
-        <Flag /> Report
-      </Button>
+      {!hideTrigger && (
+        <Button variant={variant} onClick={() => setOpen(true)}>
+          <Flag /> Report
+        </Button>
+      )}
       <Dialog
         open={open}
         onClose={() => setOpen(false)}

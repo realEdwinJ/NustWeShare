@@ -23,7 +23,18 @@ export function middleware(req: NextRequest) {
     return NextResponse.json({ error: { code: "CSRF", message: "Cross-site request blocked." } }, { status: 403 });
   }
 
+  // One canonical URL per module: /modules/MCI511S → /modules/mci511s
+  const mod = /^\/modules\/([^/]+)$/.exec(pathname);
+  if (mod && req.method === "GET" && mod[1] !== mod[1].toLowerCase()) {
+    const url = req.nextUrl.clone();
+    url.pathname = `/modules/${mod[1].toLowerCase()}`;
+    return NextResponse.redirect(url, 308);
+  }
+
   const res = NextResponse.next();
+  if (process.env.NODE_ENV === "production" && req.nextUrl.protocol === "https:") {
+    res.headers.set("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+  }
   res.headers.set("X-Content-Type-Options", "nosniff");
   res.headers.set("X-Frame-Options", "SAMEORIGIN");
   res.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");

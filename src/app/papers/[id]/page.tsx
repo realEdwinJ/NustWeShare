@@ -9,13 +9,11 @@ import { Breadcrumbs } from "@/components/ui/page-header";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PaperReader } from "@/components/viewer/PaperReader";
 import { ViewTracker } from "@/components/papers/ViewTracker";
-import { ReportDialog } from "@/components/report/ReportDialog";
-import { SaveButton } from "@/components/papers/SaveButton";
-import { ShareButton } from "@/components/papers/ShareButton";
-import { EditPaperDialog } from "@/components/papers/EditPaperDialog";
 import { TypeBadge } from "@/components/papers/ModulePapers";
+import { PaperActions } from "@/components/papers/PaperActions";
 import { getPaperDetail, listModulePapers } from "@/lib/papers/queries";
-import { assessmentLabel, compactNumber, downloadFilename, formatBytes, timeAgo } from "@/lib/papers/format";
+import { assessmentLabel, compactNumber, downloadFilename, formatBytes } from "@/lib/papers/format";
+import { RelTime } from "@/components/ui/rel-time";
 import { getCurrentUser } from "@/lib/auth/current";
 import { isUuid } from "@/lib/http";
 
@@ -56,6 +54,22 @@ export default async function PaperPage({ params }: { params: Promise<{ id: stri
           <Link href={`/modules/${mod.code.toLowerCase()}`} className={buttonVariants()}>
             See other {mod.code} papers
           </Link>
+        </EmptyState>
+      </Container>
+    );
+  }
+
+  const uploadHref = `/upload?module=${mod.code}&year=${paper.academicYear}&type=${paper.assessmentType}`;
+  if (paper.status !== "active") {
+    return (
+      <Container className="py-16">
+        <EmptyState
+          icon={<FileText />}
+          title="This paper's file is missing"
+          description={`We lost the file for ${mod.code} ${assessmentLabel(paper.assessmentType, paper.assessmentNumber)} ${paper.academicYear}, so it's hidden for now. If you have a copy, re-uploading restores it for everyone.`}
+        >
+          <Link href={uploadHref} className={buttonVariants({ variant: "brand" })}>Upload a replacement</Link>
+          <Link href={`/modules/${mod.code.toLowerCase()}`} className={buttonVariants({ variant: "outline" })}>Other {mod.code} papers</Link>
         </EmptyState>
       </Container>
     );
@@ -104,26 +118,21 @@ export default async function PaperPage({ params }: { params: Promise<{ id: stri
           </h1>
           <p className="mt-1 text-muted-foreground">{mod.name}</p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {d.canonical && (
-            <a href={downloadUrl} className={buttonVariants({ variant: "default" })} download={filename}>
-              <Download /> Download PDF
-            </a>
-          )}
-          <SaveButton paperId={paper.id} initial={saved} />
-          <ShareButton title={title} text={`${title} — ${mod.name}`} />
-          {canEdit && (
-            <EditPaperDialog
-              paper={{ id: paper.id, moduleCode: mod.code, academicYear: paper.academicYear, semester: paper.semester, assessmentType: paper.assessmentType, assessmentNumber: paper.assessmentNumber }}
-            />
-          )}
-          <ReportDialog paperId={paper.id} />
-        </div>
+        <PaperActions
+          paper={{ id: paper.id, moduleCode: mod.code, academicYear: paper.academicYear, semester: paper.semester, assessmentType: paper.assessmentType, assessmentNumber: paper.assessmentNumber }}
+          title={title}
+          shareText={`${title} — ${mod.name}`}
+          downloadUrl={downloadUrl}
+          filename={filename}
+          saved={saved}
+          canEdit={canEdit}
+          hasFile={!!d.canonical}
+        />
       </div>
 
       <div className="mt-6">
         {d.canonical ? (
-          <PaperReader paperId={paper.id} title={title} />
+          <PaperReader paperId={paper.id} title={title} uploadHref={uploadHref} />
         ) : (
           <EmptyState icon={<FileText />} title="File not available yet" description="The file for this paper is still processing or missing. Try again later." />
         )}
@@ -156,7 +165,7 @@ export default async function PaperPage({ params }: { params: Promise<{ id: stri
                 { icon: HardDrive, k: "File size", v: formatBytes(d.canonical?.fileSize) },
                 { icon: Eye, k: "Reads", v: compactNumber(paper.views) },
                 { icon: Download, k: "Downloads", v: compactNumber(paper.downloads) },
-                { icon: Calendar, k: "Added", v: timeAgo(paper.createdAt) },
+                { icon: Calendar, k: "Added", v: <RelTime date={paper.createdAt} /> },
               ].map((r) => (
                 <div key={r.k} className="flex items-center justify-between gap-3">
                   <dt className="flex items-center gap-2 text-muted-foreground"><r.icon className="size-4" /> {r.k}</dt>

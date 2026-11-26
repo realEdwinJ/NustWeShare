@@ -6,7 +6,7 @@ import { getUserFromRequest } from "@/lib/auth/current";
 import { hashPin, verifyPin } from "@/lib/auth/hash";
 import { createSessionToken, sessionCookieOptions, SESSION_COOKIE } from "@/lib/auth/session";
 import { jsonError, readJson } from "@/lib/http";
-import { rateLimit } from "@/lib/security/rateLimit";
+import { rateLimitShared } from "@/lib/security/rateLimit";
 import { weakPinReason } from "@/lib/account/validation";
 
 export const dynamic = "force-dynamic";
@@ -15,7 +15,7 @@ export const dynamic = "force-dynamic";
 export async function POST(req: NextRequest) {
   const user = await getUserFromRequest(req);
   if (!user) return jsonError("UNAUTHORIZED", "You need to be logged in.", 401);
-  const rl = rateLimit({ key: `pin:${user.id}`, limit: 5, windowMs: 15 * 60 * 1000 });
+  const rl = await rateLimitShared({ key: `pin:${user.id}`, limit: 5, windowMs: 15 * 60 * 1000 });
   if (!rl.allowed) return jsonError("RATE_LIMITED", "Too many attempts. Try again in a few minutes.", 429);
   const body = await readJson(req);
   const current = String(body?.currentPin ?? "");

@@ -5,16 +5,17 @@ import { users } from "@/db/schema/users";
 import { contributionStats } from "@/db/schema/contribution_stats";
 import { hashPin, normalizeUsername } from "@/lib/auth/hash";
 import { createSessionToken, sessionCookieOptions, SESSION_COOKIE } from "@/lib/auth/session";
-import { rateLimit } from "@/lib/security/rateLimit";
+import { rateLimitShared } from "@/lib/security/rateLimit";
 import { hashIp } from "@/lib/security/sanitize";
 import { getClientIp, jsonError, readJson } from "@/lib/http";
+import { generateRecoveryCode, hashRecoveryCode } from "@/lib/auth/recovery";
 import { AVATAR_COLORS, RESERVED_USERNAMES, validateDisplayName, validateUsername, weakPinReason } from "@/lib/account/validation";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest) {
   const ip = getClientIp(req);
-  const rl = rateLimit({ key: `register:${hashIp(ip).slice(0, 16)}`, limit: 5, windowMs: 60 * 60 * 1000 });
+  const rl = await rateLimitShared({ key: `register:${hashIp(ip).slice(0, 16)}`, limit: 5, windowMs: 60 * 60 * 1000 });
   if (!rl.allowed) return jsonError("RATE_LIMITED", "Too many sign-ups from this network. Try again later.", 429);
 
   const body = await readJson(req);
@@ -36,10 +37,12 @@ export async function POST(req: NextRequest) {
     if (existing.length > 0) return jsonError("USERNAME_TAKEN", "That username is already taken. Please choose another.", 409);
 
     const pinHash = await hashPin(pin);
+    const recoveryCode = generateRecoveryCode();
+    const recoveryHash = await hashRecoveryCode(recoveryCode);
     const color = AVATAR_COLORS[Math.floor(Math.random() * AVATAR_COLORS.length)];
     const inserted = await db
       .insert(users)
-      .values({ username, normalizedUsername: normalized, displayName, pinHash, avatarColor: color, lastLoginAt: new Date() })
+      .values({ username, normalizedUsername: normalized, displayName, pinHash, avatarColor: color, lastLoginAt: new Date(), recoveryHash, recoveryCreatedAt: new Date() })
       .returning({ id: users.id, username: users.username, displayName: users.displayName });
     const user = inserted[0];
     try {
@@ -48,7 +51,7 @@ export async function POST(req: NextRequest) {
 
     const { getEnv } = await import("@/lib/env");
     const token = createSessionToken(user.id, getEnv().APP_SECRET, 0);
-    const res = NextResponse.json({ data: user }, { status: 201 });
+    const res = NextResponse.json({ data: { ...user, recoveryCode } }, { status: 201, headers: { "Cache-Control": "no-store" } });
     res.cookies.set(SESSION_COOKIE, token, sessionCookieOptions());
     return res;
   } catch (e: any) {

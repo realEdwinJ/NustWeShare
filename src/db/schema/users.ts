@@ -38,6 +38,8 @@ export const users = pgTable(
     sessionVersion: integer("session_version").notNull().default(0), // bump → logs out everywhere
     lastLoginAt: timestamp("last_login_at", { withTimezone: true }),
     pinChangedAt: timestamp("pin_changed_at", { withTimezone: true }),
+    recoveryHash: varchar("recovery_hash", { length: 200 }), // bcrypt of a one-time recovery code
+    recoveryCreatedAt: timestamp("recovery_created_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },

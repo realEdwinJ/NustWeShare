@@ -12,7 +12,7 @@ import { getDb } from "@/lib/db";
 import { users } from "@/db/schema/users";
 import { programmes } from "@/db/schema/programmes";
 import { getLeaderboard, listUserUploads } from "@/lib/papers/queries";
-import { compactNumber } from "@/lib/papers/format";
+import { compactNumber, formatDate } from "@/lib/papers/format";
 import { getCurrentUser } from "@/lib/auth/current";
 
 export const dynamic = "force-dynamic";
@@ -69,7 +69,7 @@ export default async function ProfilePage({ params }: { params: Promise<{ userna
           {u.bio && <p className="mt-3 max-w-2xl text-sm leading-relaxed">{u.bio}</p>}
           <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
             {prog[0] && <span className="inline-flex items-center gap-1.5"><GraduationCap className="size-4" /> {prog[0].name}{u.studyYear ? ` · Year ${u.studyYear}` : ""}</span>}
-            <span className="inline-flex items-center gap-1.5"><CalendarDays className="size-4" /> Joined {u.createdAt.toLocaleDateString("en-GB", { month: "short", year: "numeric" })}</span>
+            <span className="inline-flex items-center gap-1.5"><CalendarDays className="size-4" /> Joined {formatDate(u.createdAt, { month: "short", year: "numeric" })}</span>
           </div>
         </div>
         {isMe && <Link href="/settings" className={buttonVariants({ variant: "outline" })}>Edit profile</Link>}

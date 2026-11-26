@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { getDb } from "@/lib/db";
 import { users } from "@/db/schema/users";
 import { verifyPin, normalizeUsername } from "@/lib/auth/hash";
 import { createSessionToken, sessionCookieOptions, SESSION_COOKIE } from "@/lib/auth/session";
-import { rateLimit, limits } from "@/lib/security/rateLimit";
+import { rateLimitShared, limits } from "@/lib/security/rateLimit";
 import { hashIp } from "@/lib/security/sanitize";
 import { getClientIp, jsonError, readJson } from "@/lib/http";
 
@@ -17,7 +17,7 @@ function lockMessage(until: Date) {
 
 export async function POST(req: NextRequest) {
   const ipHash = hashIp(getClientIp(req)).slice(0, 16);
-  const rl = rateLimit({ key: `login:${ipHash}`, limit: limits.login.limit * 2, windowMs: limits.login.windowMs });
+  const rl = await rateLimitShared({ key: `login:${ipHash}`, limit: limits.login.limit * 2, windowMs: limits.login.windowMs });
   if (!rl.allowed) return jsonError("RATE_LIMITED", "Too many login attempts from this network. Try again soon.", 429);
 
   const body = await readJson(req);
@@ -35,20 +35,31 @@ export async function POST(req: NextRequest) {
       return jsonError("INVALID_CREDENTIALS", "Invalid username or PIN.", 401);
     }
     const user = rows[0];
+    // Account-wide lock only after many failures from anywhere (stops distributed guessing without letting
+    // one person lock a victim out). Per-network attempts are limited separately below.
     if (user.lockedUntil && user.lockedUntil.getTime() > Date.now()) {
       return jsonError("PIN_LOCKED", lockMessage(user.lockedUntil), 429);
+    }
+    const perNet = await rateLimitShared({ key: `pinfail:${user.id}:${ipHash}`, limit: 5, windowMs: 15 * 60 * 1000 });
+    if (!perNet.allowed) {
+      return jsonError("PIN_LOCKED", lockMessage(new Date(perNet.resetAt)), 429);
     }
 
     const ok = await verifyPin(pin, user.pinHash);
     if (!ok) {
       const attempts = (user.failedAttempts || 0) + 1;
-      const lockedUntil = attempts >= 5 ? new Date(Date.now() + 15 * (attempts - 4) * 60 * 1000) : null;
+      const lockedUntil = attempts >= 20 ? new Date(Date.now() + Math.min(30, 5 * (attempts - 19)) * 60 * 1000) : null;
       await db.update(users).set({ failedAttempts: attempts, lockedUntil }).where(eq(users.id, user.id));
       if (lockedUntil) return jsonError("PIN_LOCKED", lockMessage(lockedUntil), 429);
-      const left = 5 - attempts;
-      return jsonError("INVALID_CREDENTIALS", `Invalid username or PIN. ${left} attempt${left === 1 ? "" : "s"} left before a temporary lock.`, 401);
+      const left = perNet.remaining;
+      return jsonError(
+        "INVALID_CREDENTIALS",
+        left > 0 ? `Invalid username or PIN. ${left} attempt${left === 1 ? "" : "s"} left before a short pause.` : "Invalid username or PIN.",
+        401
+      );
     }
 
+    await db.execute(sql`DELETE FROM rate_limits WHERE key = ${`pinfail:${user.id}:${ipHash}`}`).catch(() => {});
     await db.update(users).set({ failedAttempts: 0, lockedUntil: null, lastLoginAt: new Date() }).where(eq(users.id, user.id));
     const { getEnv } = await import("@/lib/env");
     const token = createSessionToken(user.id, getEnv().APP_SECRET, user.sessionVersion ?? 0);

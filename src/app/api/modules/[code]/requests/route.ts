@@ -6,7 +6,7 @@ import { paperRequests, paperRequestVotes } from "@/db/schema/paper_requests";
 import { getUserFromRequest } from "@/lib/auth/current";
 import { getClientIp, jsonError, readJson } from "@/lib/http";
 import { hashIp } from "@/lib/security/sanitize";
-import { rateLimit } from "@/lib/security/rateLimit";
+import { rateLimitShared } from "@/lib/security/rateLimit";
 import { ASSESSMENT_TYPES } from "@/lib/papers/format";
 
 export const dynamic = "force-dynamic";
@@ -41,7 +41,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ cod
 export async function POST(req: NextRequest, { params }: { params: Promise<{ code: string }> }) {
   const { code } = await params;
   const ipHash = hashIp(getClientIp(req));
-  const rl = rateLimit({ key: `req:${ipHash.slice(0, 16)}`, limit: 10, windowMs: 60 * 60 * 1000 });
+  const rl = await rateLimitShared({ key: `req:${ipHash.slice(0, 16)}`, limit: 10, windowMs: 60 * 60 * 1000 });
   if (!rl.allowed) return jsonError("RATE_LIMITED", "Too many requests. Try again later.", 429);
   const body = await readJson(req);
   const year = body?.academicYear ? Number(body.academicYear) : null;

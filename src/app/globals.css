@@ -148,6 +148,11 @@ html {
   -webkit-tap-highlight-color: transparent;
 }
 
+html,
+body {
+  overflow-x: clip; /* decorative glows must never cause sideways scrolling on phones */
+}
+
 body {
   background: var(--background);
   color: var(--foreground);

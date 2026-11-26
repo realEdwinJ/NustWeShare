@@ -11,8 +11,10 @@ import { ASSESSMENT_TYPES, TYPE_LABEL, typeHasNumber } from "@/lib/papers/format
 
 type P = { id: string; moduleCode: string; academicYear: number; semester: number; assessmentType: string; assessmentNumber: number | null };
 
-export function EditPaperDialog({ paper, compact }: { paper: P; compact?: boolean }) {
-  const [open, setOpen] = useState(false);
+export function EditPaperDialog({ paper, compact, open: openProp, onOpenChange, hideTrigger }: { paper: P; compact?: boolean; open?: boolean; onOpenChange?: (v: boolean) => void; hideTrigger?: boolean }) {
+  const [openState, setOpenState] = useState(false);
+  const open = openProp ?? openState;
+  const setOpen = (v: boolean) => (onOpenChange ? onOpenChange(v) : setOpenState(v));
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [f, setF] = useState({ ...paper, assessmentNumber: paper.assessmentNumber ?? "" as number | "" });
   const [busy, setBusy] = useState(false);
@@ -55,9 +57,11 @@ export function EditPaperDialog({ paper, compact }: { paper: P; compact?: boolea
 
   return (
     <>
-      <Button variant="ghost" size={compact ? "sm" : "default"} onClick={() => setOpen(true)}>
-        <Pencil /> Edit
-      </Button>
+      {!hideTrigger && (
+        <Button variant="ghost" size={compact ? "sm" : "default"} onClick={() => setOpen(true)}>
+          <Pencil /> Edit
+        </Button>
+      )}
       <Dialog
         open={open}
         onClose={() => { setOpen(false); setConfirmDelete(false); }}

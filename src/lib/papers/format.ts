@@ -59,3 +59,8 @@ export function timeAgo(d: Date | string | number) {
   if (days < 30) return `${days} day${days === 1 ? "" : "s"} ago`;
   return date.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
 }
+
+/** Absolute date in Namibian time — identical on server and client (no hydration drift). */
+export function formatDate(d: Date | string | number, opts: Intl.DateTimeFormatOptions = { day: "numeric", month: "short", year: "numeric" }) {
+  return new Date(d).toLocaleDateString("en-GB", { timeZone: "Africa/Windhoek", ...opts });
+}

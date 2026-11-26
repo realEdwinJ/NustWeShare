@@ -13,11 +13,11 @@ import { findOrCreatePaper } from "@/lib/papers/resolve";
 import { getStorage } from "@/lib/r2/client";
 import { buildR2Key } from "@/lib/r2/keys";
 import { sanitizeFilename, hashIp } from "@/lib/security/sanitize";
-import { rateLimit, limits } from "@/lib/security/rateLimit";
+import { rateLimitShared, limits } from "@/lib/security/rateLimit";
 import { logger } from "@/lib/logger";
 import { getUserFromRequest } from "@/lib/auth/current";
 import { getModuleByCode } from "@/lib/papers/queries";
-import { fulfilRequests } from "@/lib/papers/moderation";
+import { fulfilRequests, storedFileExists } from "@/lib/papers/moderation";
 import { getClientIp } from "@/lib/http";
 
 export const dynamic = "force-dynamic";
@@ -25,7 +25,7 @@ export const dynamic = "force-dynamic";
 // POST /api/papers/upload — ghost-first, module required, multi-file, per-file metadata optional
 export async function POST(req: NextRequest) {
   const ip = getClientIp(req);
-  const rl = rateLimit({ key: `upload:${hashIp(ip).slice(0, 16)}`, limit: limits.upload.limit, windowMs: limits.upload.windowMs });
+  const rl = await rateLimitShared({ key: `upload:${hashIp(ip).slice(0, 16)}`, limit: limits.upload.limit, windowMs: limits.upload.windowMs });
   if (!rl.allowed) {
     return NextResponse.json({ error: { code: "RATE_LIMITED", message: "Too many uploads. Try again later." } }, { status: 429 });
   }
@@ -156,6 +156,18 @@ export async function POST(req: NextRequest) {
       // SHA-256 Level 1 (Spec 26)
       const hash = sha256(buf);
       const existingFile = await db.select().from(paperFiles).where(eq(paperFiles.sha256, hash)).limit(1);
+      if (existingFile.length > 0) {
+        // Same bytes as a record whose paper is hidden/removed or whose object vanished → replace the stale record
+        const prevPaper = await db.select({ status: papers.status, reason: papers.deletionReason }).from(papers).where(eq(papers.id, existingFile[0].paperId)).limit(1);
+        if (prevPaper[0]?.status === "deleted" && prevPaper[0].reason !== "uploader") {
+          throw new AppError("This exact file was removed by moderators or after community reports, so it can't be re-uploaded.", "REMOVED_CONTENT", 409);
+        }
+        const stale = prevPaper[0]?.status !== "active" || !(await storedFileExists(existingFile[0].r2ObjectKey));
+        if (stale) {
+          await db.delete(paperFiles).where(eq(paperFiles.id, existingFile[0].id));
+          existingFile.length = 0;
+        }
+      }
       if (existingFile.length > 0) {
         // Exact binary duplicate — return existing paper, don't store again (Spec 74)
         const existingPaper = await db.select().from(papers).where(eq(papers.id, existingFile[0].paperId)).limit(1);

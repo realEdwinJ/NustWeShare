@@ -9,7 +9,8 @@ import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/components/ui/toast";
 import { EditPaperDialog } from "@/components/papers/EditPaperDialog";
 import { TypeBadge } from "@/components/papers/ModulePapers";
-import { compactNumber, timeAgo } from "@/lib/papers/format";
+import { compactNumber } from "@/lib/papers/format";
+import { RelTime } from "@/components/ui/rel-time";
 
 type Item = {
   fileId: string; paperId: string; moduleCode: string; moduleName: string; academicYear: number; semester: number;
@@ -68,7 +69,7 @@ export function MyUploads({ items }: { items: Item[] }) {
                 <span className="inline-flex items-center gap-1"><Eye className="size-3.5" />{compactNumber(u.views)}</span>
                 <span className="ml-3 inline-flex items-center gap-1"><Download className="size-3.5" />{compactNumber(u.downloads)}</span>
               </td>
-              <td className="px-4 py-3 text-muted-foreground">{timeAgo(u.uploadedAt)}</td>
+              <td className="px-4 py-3 text-muted-foreground"><RelTime date={u.uploadedAt} /></td>
               <td className="px-4 py-3">
                 {u.status === "active" && (
                   <span className="flex items-center gap-2">

@@ -14,13 +14,15 @@ import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/components/ui/toast";
 import { useTheme, type ThemePref } from "@/components/providers/theme";
 import { PinInput } from "@/components/auth/AuthForm";
+import { RecoveryCodeDialog } from "@/components/auth/RecoveryCodeDialog";
 import { AVATAR_COLORS, weakPinReason } from "@/lib/account/validation";
-import { timeAgo } from "@/lib/papers/format";
+import { formatDate } from "@/lib/papers/format";
+import { RelTime } from "@/components/ui/rel-time";
 
 type U = {
   username: string; displayName: string; bio: string; avatarColor: string; avatarEmoji: string; programmeCode: string; studyYear: number | null;
   publicProfile: boolean; showOnLeaderboard: boolean; uploadAnonymously: boolean; preferences: Record<string, any>;
-  lastLoginAt: string | null; pinChangedAt: string | null; createdAt: string;
+  lastLoginAt: string | null; pinChangedAt: string | null; recoveryCreatedAt: string | null; createdAt: string;
 };
 
 const SECTIONS = [
@@ -139,6 +141,23 @@ export function SettingsClient({ user, programmes }: { user: U; programmes: { co
   async function logoutOthers() {
     const r = await fetch("/api/account/logout-all", { method: "POST" });
     if (r.ok) toast({ tone: "success", title: "Signed out of all other devices" });
+  }
+
+  // Recovery code
+  const [recOpen, setRecOpen] = useState(false);
+  const [recPin, setRecPin] = useState("");
+  const [recErr, setRecErr] = useState("");
+  const [recCode, setRecCode] = useState<string | null>(null);
+  async function newRecoveryCode() {
+    setSaving("recovery");
+    setRecErr("");
+    const r = await fetch("/api/account/recovery", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pin: recPin }) });
+    const j = (await r.json()) as any;
+    setSaving(null);
+    if (!r.ok) return setRecErr(j.error?.message || "Couldn't create a code.");
+    setRecOpen(false);
+    setRecPin("");
+    setRecCode(j.data.recoveryCode);
   }
 
   // Delete
@@ -300,7 +319,7 @@ export function SettingsClient({ user, programmes }: { user: U; programmes: { co
 
         <Section id="security" title="Security">
           <p className="text-sm text-muted-foreground">
-            Last sign-in {user.lastLoginAt ? timeAgo(user.lastLoginAt) : "—"} · PIN {user.pinChangedAt ? `changed ${timeAgo(user.pinChangedAt)}` : "never changed"}
+            Recovery code {user.recoveryCreatedAt ? <RelTime date={user.recoveryCreatedAt} prefix="created " /> : "not set — create one so you can reset a forgotten PIN"} · Last sign-in {user.lastLoginAt ? <RelTime date={user.lastLoginAt} /> : "—"} · PIN {user.pinChangedAt ? <RelTime date={user.pinChangedAt} prefix="changed " /> : "never changed"}
           </p>
           <div className="mt-5 grid gap-4 sm:grid-cols-3">
             <PinInput id="pin-cur" value={cur} onChange={setCur} autoComplete="current-password" label="Current PIN" />
@@ -310,6 +329,7 @@ export function SettingsClient({ user, programmes }: { user: U; programmes: { co
           {pinWeak ? <FieldError>{pinWeak}</FieldError> : errors.pin ? <FieldError>{errors.pin}</FieldError> : null}
           <div className="mt-5 flex flex-wrap justify-between gap-3">
             <Button variant="outline" onClick={logoutOthers}><LogOut /> Sign out other devices</Button>
+            <Button variant="outline" onClick={() => setRecOpen(true)}><KeyRound /> New recovery code</Button>
             <Button onClick={changePin} loading={saving === "pin"} disabled={cur.length !== 5 || n1.length !== 5 || n1 !== n2 || !!pinWeak}>Change PIN</Button>
           </div>
         </Section>
@@ -327,9 +347,27 @@ export function SettingsClient({ user, programmes }: { user: U; programmes: { co
               </Button>
             </Row>
           </div>
-          <p className="mt-4 text-xs text-muted-foreground">Member since {new Date(user.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })}</p>
+          <p className="mt-4 text-xs text-muted-foreground">Member since {formatDate(user.createdAt, { day: "numeric", month: "long", year: "numeric" })}</p>
         </Section>
       </div>
+
+      <Dialog
+        open={recOpen}
+        onClose={() => setRecOpen(false)}
+        title="Create a new recovery code"
+        description="Your previous code will stop working."
+        size="sm"
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setRecOpen(false)}>Cancel</Button>
+            <Button onClick={newRecoveryCode} loading={saving === "recovery"} disabled={recPin.length !== 5}>Create code</Button>
+          </>
+        }
+      >
+        <PinInput id="rec-pin" value={recPin} onChange={setRecPin} autoComplete="current-password" label="Confirm with your PIN" />
+        {recErr && <FieldError>{recErr}</FieldError>}
+      </Dialog>
+      {recCode && <RecoveryCodeDialog open code={recCode} username={user.username} onDone={() => { setRecCode(null); router.refresh(); }} />}
 
       <Dialog
         open={delOpen}

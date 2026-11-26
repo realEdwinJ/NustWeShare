@@ -18,7 +18,7 @@ export function useZipDownload() {
   const user = useSession();
 
   const start = useCallback(
-    async (files: BulkFile[], zipName: string, readme?: string) => {
+    async (files: BulkFile[], zipName: string, readme?: (info: { saved: string[]; failed: string[] }) => string) => {
       if (!files.length) return;
       ctrl.current?.abort();
       const c = new AbortController();

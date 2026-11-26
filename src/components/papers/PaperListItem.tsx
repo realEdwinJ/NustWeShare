@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { Download, Eye } from "lucide-react";
 import { TypeBadge } from "./ModulePapers";
-import { compactNumber, timeAgo } from "@/lib/papers/format";
+import { compactNumber } from "@/lib/papers/format";
+import { RelTime } from "@/components/ui/rel-time";
 import type { PaperListItem } from "@/lib/papers/queries";
 
 export function PaperTile({ p, showTime = true }: { p: PaperListItem; showTime?: boolean }) {
@@ -18,7 +19,7 @@ export function PaperTile({ p, showTime = true }: { p: PaperListItem; showTime?:
         </span>
         <span className="inline-flex items-center gap-1"><Eye className="size-3" />{compactNumber(p.views)}</span>
         <span className="inline-flex items-center gap-1"><Download className="size-3" />{compactNumber(p.downloads)}</span>
-        {showTime && <span className="ml-auto">{timeAgo(p.createdAt)}</span>}
+        {showTime && <span className="ml-auto"><RelTime date={p.createdAt} /></span>}
       </div>
     </Link>
   );

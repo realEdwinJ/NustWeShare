@@ -35,6 +35,7 @@ export default async function SettingsPage() {
           preferences: user.preferences ?? {},
           lastLoginAt: user.lastLoginAt?.toISOString() ?? null,
           pinChangedAt: user.pinChangedAt?.toISOString() ?? null,
+          recoveryCreatedAt: user.recoveryCreatedAt?.toISOString() ?? null,
           createdAt: user.createdAt.toISOString(),
         }}
         programmes={progs.filter((p) => (seen.has(p.code) ? false : (seen.add(p.code), true))).map((p) => ({ code: p.code, name: p.name }))}

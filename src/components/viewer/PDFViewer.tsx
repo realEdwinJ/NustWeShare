@@ -22,9 +22,10 @@ type Props = {
   downloadUrl?: string;
   defaultZoom?: "fit-width" | "fit-page" | "100";
   onPageCount?: (n: number) => void;
+  uploadHref?: string;
 };
 
-export function PDFViewer({ url, title, docId, downloadUrl, defaultZoom = "fit-width", onPageCount }: Props) {
+export function PDFViewer({ url, title, docId, downloadUrl, defaultZoom = "fit-width", onPageCount, uploadHref }: Props) {
   const rootRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const pdfRef = useRef<any>(null);
@@ -36,6 +37,7 @@ export function PDFViewer({ url, title, docId, downloadUrl, defaultZoom = "fit-w
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [progress, setProgress] = useState(0);
   const [errMsg, setErrMsg] = useState("");
+  const [missing, setMissing] = useState(false);
   const [numPages, setNumPages] = useState(0);
   const [sizes, setSizes] = useState<PageSize[]>([]);
   const [page, setPage] = useState(1);
@@ -93,7 +95,9 @@ export function PDFViewer({ url, title, docId, downloadUrl, defaultZoom = "fit-w
       } catch (e: any) {
         if (cancelled) return;
         console.warn("[PDFViewer]", e);
-        setErrMsg(e?.name === "InvalidPDFException" ? "This file isn't a readable PDF." : e?.status === 404 || e?.status === 410 ? "This file is no longer available." : "We couldn't load this document.");
+        const gone = e?.status === 404 || e?.status === 410;
+        setMissing(gone);
+        setErrMsg(e?.name === "InvalidPDFException" ? "This file isn't a readable PDF." : gone ? "This paper's file is missing." : "We couldn't load this document.");
         setStatus("error");
       }
     })();
@@ -494,7 +498,7 @@ export function PDFViewer({ url, title, docId, downloadUrl, defaultZoom = "fit-w
               const v = e.target.value;
               setZoom(v === "fit-width" || v === "fit-page" ? v : parseFloat(v));
             }}
-            className="h-8 rounded-lg border bg-background px-2 text-sm outline-none focus:border-ring"
+            className="hidden h-8 rounded-lg border bg-background px-2 text-sm outline-none focus:border-ring sm:block"
             aria-label="Zoom level"
             disabled={status !== "ready"}
           >
@@ -547,7 +551,7 @@ export function PDFViewer({ url, title, docId, downloadUrl, defaultZoom = "fit-w
             </span>
           </a>
           {downloadUrl && (
-            <a href={downloadUrl} className="inline-flex size-8 items-center justify-center rounded-lg hover:bg-accent" title="Download PDF">
+            <a href={downloadUrl} className="hidden size-8 items-center justify-center rounded-lg hover:bg-accent sm:inline-flex" title="Download PDF">
               <Download className="size-4" />
               <span className="sr-only">Download PDF</span>
             </a>
@@ -608,20 +612,35 @@ export function PDFViewer({ url, title, docId, downloadUrl, defaultZoom = "fit-w
             <AlertTriangle className="size-6" />
           </div>
           <p className="font-medium">{errMsg}</p>
-          <p className="max-w-sm text-sm text-muted-foreground">Your browser may still be able to open it directly, or you can download it.</p>
-          <div className="mt-2 flex flex-wrap justify-center gap-2">
-            <Button variant="outline" onClick={() => location.reload()}>
-              Try again
-            </Button>
-            <a href={url} target="_blank" rel="noopener noreferrer" className="inline-flex h-10 items-center gap-2 rounded-xl border bg-surface px-4 text-sm font-medium hover:bg-accent">
-              <ExternalLink className="size-4" /> Open in new tab
-            </a>
-            {downloadUrl && (
-              <a href={downloadUrl} className="inline-flex h-10 items-center gap-2 rounded-xl bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary-hover">
-                <Download className="size-4" /> Download
-              </a>
-            )}
-          </div>
+          {missing ? (
+            <>
+              <p className="max-w-sm text-sm text-muted-foreground">It has been hidden until someone re-uploads it. If you have a copy, you can restore it for everyone.</p>
+              <div className="mt-2 flex flex-wrap justify-center gap-2">
+                {uploadHref && (
+                  <a href={uploadHref} className="inline-flex h-10 items-center gap-2 rounded-xl bg-brand px-4 text-sm font-medium text-brand-foreground hover:brightness-105">
+                    Upload a replacement
+                  </a>
+                )}
+              </div>
+            </>
+          ) : (
+            <>
+              <p className="max-w-sm text-sm text-muted-foreground">It may be a temporary network problem. Your browser may still open it directly.</p>
+              <div className="mt-2 flex flex-wrap justify-center gap-2">
+                <Button variant="outline" onClick={() => location.reload()}>
+                  Try again
+                </Button>
+                <a href={url} target="_blank" rel="noopener noreferrer" className="inline-flex h-10 items-center gap-2 rounded-xl border bg-surface px-4 text-sm font-medium hover:bg-accent">
+                  <ExternalLink className="size-4" /> Open in new tab
+                </a>
+                {downloadUrl && (
+                  <a href={downloadUrl} className="inline-flex h-10 items-center gap-2 rounded-xl bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary-hover">
+                    <Download className="size-4" /> Download
+                  </a>
+                )}
+              </div>
+            </>
+          )}
         </div>
       )}
 

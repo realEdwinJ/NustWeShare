@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { Header } from "@/components/layout/Header";
 import { Footer } from "@/components/layout/Footer";
+import { NavProgress } from "@/components/layout/NavProgress";
 import { ThemeProvider, themeScript, type ThemePref } from "@/components/providers/theme";
 import { SessionProvider, type SessionUser } from "@/components/providers/session";
 import { ToastProvider } from "@/components/ui/toast";
@@ -62,10 +63,9 @@ export default async function RootLayout({ children }: { children: React.ReactNo
 
   return (
     <html lang="en" className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`} suppressHydrationWarning>
-      <head>
-        <script dangerouslySetInnerHTML={{ __html: themeScript }} />
-      </head>
-      <body className="flex min-h-full flex-col bg-background text-foreground">
+      <body className="flex min-h-full flex-col bg-background text-foreground" suppressHydrationWarning>
+        {/* Runs before first paint: applies the saved theme so there's no light/dark flash */}
+        <script dangerouslySetInnerHTML={{ __html: themeScript }} suppressHydrationWarning />
         <a
           href="#main-content"
           className="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-[60] focus:rounded-lg focus:bg-primary focus:px-4 focus:py-2 focus:text-primary-foreground"
@@ -75,6 +75,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <ThemeProvider serverTheme={serverTheme}>
           <SessionProvider user={sessionUser}>
             <ToastProvider>
+              <NavProgress />
               <Header />
               <main id="main-content" className="flex-1 focus:outline-none" tabIndex={-1}>
                 {children}
