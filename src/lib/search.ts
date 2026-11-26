@@ -5,6 +5,15 @@ import { hasPaperFilters, parseSearchIntent } from "@/lib/searchIntent";
 export type SearchModule = { id: string; code: string; name: string; paperCount: number; departmentName: string | null; facultyCode: string | null };
 export type SearchProgramme = { code: string; name: string; level: string; href: string };
 
+const ABBREVIATIONS: Record<string, string> = {
+  maths: "mathemat", math: "mathemat", calc: "calculus", stats: "statist", stat: "statist", prob: "probabil",
+  comp: "comput", cs: "computer science", prog: "program", progr: "program", algo: "algorithm", algos: "algorithm",
+  db: "database", dbs: "database", ds: "data struct", oop: "object", os: "operating", net: "network", nets: "network",
+  sec: "securit", cyber: "cyber", ai: "artificial", ml: "machine learning", eng: "engineer", engl: "english",
+  elec: "electr", mech: "mechan", civ: "civil", phys: "physic", chem: "chemi", bio: "biolog", acc: "account",
+  econ: "econom", mgmt: "manag", comm: "communicat", info: "informat", it: "information technology",
+};
+
 function escapeLike(q: string) {
   return q.replace(/[%_\\]/g, "\\$&");
 }
@@ -55,7 +64,12 @@ async function searchText(raw: string, opts: { moduleLimit?: number; programmeLi
   const compact = q.replace(/\s+/g, "");
   const like = `%${escapeLike(q)}%`;
   const prefix = `${escapeLike(compact)}%`;
-  const words = q.split(/\s+/).filter(Boolean).slice(0, 6).map((w) => `%${escapeLike(w)}%`);
+  // Student shorthand → stem that appears in official module names ("maths" isn't a substring of "Mathematics")
+  const words = q
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 6)
+    .map((w) => `%${escapeLike(ABBREVIATIONS[w.toLowerCase()] ?? w)}%`);
   const wordCond = sql.join(words.map((w) => sql`m.name ILIKE ${w} ESCAPE '\\'`), sql` AND `);
   const moduleLimit = opts.moduleLimit ?? 20;
 
