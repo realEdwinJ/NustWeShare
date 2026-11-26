@@ -12,7 +12,10 @@ import { faculties as facultyData } from "./data/faculties";
 import { schools as schoolData } from "./data/schools";
 import { departments as deptData } from "./data/departments";
 import { programmes as programmeData } from "./data/programmes";
-import { modules as moduleData } from "./data/modules";
+import { modules as rawModuleData } from "./data/modules";
+import { MODULE_NAME_FIXES } from "./data/module_name_fixes";
+
+const moduleData = rawModuleData.map((m) => ({ ...m, name: MODULE_NAME_FIXES[m.code] ?? m.name }));
 import { programmeModules as pmData } from "./data/programme_modules";
 import { logger } from "@/lib/logger";
 

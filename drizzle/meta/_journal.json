@@ -43,6 +43,13 @@
       "when": 1795704920611,
       "tag": "0005_system_state",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1795723243285,
+      "tag": "0006_fix_module_names",
+      "breakpoints": true
     }
   ]
 }

@@ -96,6 +96,24 @@ export function UploadClient() {
     if (next.length > room) problems.push(`Only ${MAX_FILES} files per batch — ${next.length - room} skipped`);
     setFiles((cur) => [...cur, ...next.slice(0, Math.max(0, room))]);
     setNotice(problems.length ? problems.join(" · ") : null);
+
+    // No module chosen yet: if every new filename names the same module code, select it for the student
+    if (!mod && next.length) {
+      const codes = new Set(next.map((m) => parseFilename(m.file.name).moduleCode).filter(Boolean) as string[]);
+      if (codes.size === 1) {
+        const code = [...codes][0];
+        fetch(`/api/search?q=${encodeURIComponent(code)}&limit=1`)
+          .then((r) => r.json())
+          .then((j: any) => {
+            const m = j.data?.modules?.[0];
+            if (m && m.code.toUpperCase() === code) {
+              setMod((cur) => cur ?? { code: m.code, name: m.name });
+              toast({ tone: "success", title: `Module detected: ${m.code}`, description: `${m.name} — from the filename. Change it if that's wrong.` });
+            }
+          })
+          .catch(() => {});
+      }
+    }
   }
 
   const patch = (key: string, p: Partial<FileMeta>) => setFiles((cur) => cur.map((f) => (f.key === key ? { ...f, ...p } : f)));
@@ -153,7 +171,7 @@ export function UploadClient() {
         <ModuleSelector value={mod} onSelect={setMod} />
       </section>
 
-      <section className={cn("rounded-3xl border bg-card p-5 transition-opacity sm:p-6", !mod && "pointer-events-none opacity-50")} aria-disabled={!mod}>
+      <section className="rounded-3xl border bg-card p-5 sm:p-6">
         <h2 className="flex items-center gap-2 font-semibold"><span className="flex size-6 items-center justify-center rounded-full bg-primary text-xs text-primary-foreground">2</span> Add PDFs</h2>
         <p className="mb-4 mt-1 text-sm text-muted-foreground">Up to {MAX_FILES} files, 3 MB each. Name files like <span className="font-mono">MCI511S_2024_Test_1.pdf</span> and we&apos;ll fill in the details.</p>
         <div
@@ -165,12 +183,12 @@ export function UploadClient() {
           onDrop={(e) => {
             e.preventDefault();
             setDrag(false);
-            if (mod) addFiles(e.dataTransfer.files);
+            addFiles(e.dataTransfer.files);
           }}
-          onClick={() => mod && input.current?.click()}
-          onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && mod && input.current?.click()}
+          onClick={() => input.current?.click()}
+          onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && input.current?.click()}
           role="button"
-          tabIndex={mod ? 0 : -1}
+          tabIndex={0}
           className={cn("flex cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed px-6 py-10 text-center transition-colors", drag ? "border-info bg-info-soft" : "border-input hover:border-muted-foreground/60 hover:bg-accent/40")}
         >
           <CloudUpload className={cn("size-10", drag ? "text-info" : "text-muted-foreground")} />
@@ -220,6 +238,11 @@ export function UploadClient() {
           ) : (
             <p className="flex-1 text-sm text-muted-foreground">
               Uploading as a guest. <Link href="/register?next=/upload" className="font-medium text-info hover:underline">Create a profile</Link> to get credit on the leaderboard.
+            </p>
+          )}
+          {!mod && files.length > 0 && !busy && (
+            <p className="text-sm text-warning sm:order-first sm:basis-full" role="status">
+              Pick the module above — every paper needs one.
             </p>
           )}
           {missingSemester > 0 && !busy && (

@@ -62,7 +62,7 @@ export default async function SearchPage({ searchParams }: { searchParams: Promi
         </EmptyState>
       ) : (
         <div className="mt-8 space-y-10">
-          {hasPaperFilters(data.intent) && data.modules.length > 0 && (
+          {hasPaperFilters(data.intent) && (data.modules.length > 0 || data.papers.length > 0) && (
             <section aria-labelledby="papers-h">
               <div className="mb-3 flex flex-wrap items-center gap-3">
                 <h2 id="papers-h" className="flex items-center gap-2 text-base font-semibold">
@@ -71,11 +71,15 @@ export default async function SearchPage({ searchParams }: { searchParams: Promi
                     {[data.intent.type ? TYPE_LABEL[data.intent.type] + (data.intent.number ? ` ${data.intent.number}` : "") : null, data.intent.year, data.intent.semester ? `Semester ${data.intent.semester}` : null].filter(Boolean).join(" · ")}
                   </span>
                 </h2>
-                <Link href={moduleHref(data.modules[0].code, data.intent)} className="ml-auto text-sm font-medium text-info hover:underline">
-                  Open {data.modules[0].code} with these filters →
-                </Link>
+                {data.modules[0] ? (
+                  <Link href={moduleHref(data.modules[0].code, data.intent)} className="ml-auto text-sm font-medium text-info hover:underline">
+                    Open {data.modules[0].code} with these filters →
+                  </Link>
+                ) : (
+                  <span className="ml-auto text-sm text-muted-foreground">Add a module code to narrow down, e.g. “MCI511S {term}”</span>
+                )}
               </div>
-              {data.papers.length === 0 ? (
+              {data.papers.length === 0 && data.modules[0] ? (
                 <div className="rounded-2xl border border-dashed px-5 py-6 text-sm text-muted-foreground">
                   No matching {data.modules[0].code} paper yet.{" "}
                   <Link href={moduleHref(data.modules[0].code)} className="font-medium text-info hover:underline">See all {data.modules[0].code} papers</Link> or request it there.

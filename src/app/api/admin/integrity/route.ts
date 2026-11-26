@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { getDb } from "@/lib/db";
 import { papers } from "@/db/schema/papers";
 import { paperFiles } from "@/db/schema/paper_files";
@@ -37,20 +37,29 @@ export async function POST(req: NextRequest) {
     for (const { r, ok } of results) {
       checked++;
       if (!ok && (await handleMissingFile(r.paperId))) hidden.push(r.paperId);
-      // Backfill text fingerprints (near-duplicate detection) for files uploaded before it worked; capped per run
-      if (ok && !r.fp && fingerprinted < 40) {
-        const bytes = await storage.get(r.key);
-        if (bytes) {
-          const { text } = await extractPdfText(bytes);
-          if (text.trim().length > 50) {
-            await db.update(paperFiles).set({ textFingerprint: fingerprintFromText(text) }).where(eq(paperFiles.id, r.fileId));
-            fingerprinted++;
-          }
-        }
-      }
+
     }
   }
-  const result = { checked, fingerprinted, hidden: hidden.length, hiddenIds: hidden, checkedAt: new Date().toISOString(), by: user.username };
+  // Backfill text fingerprints (near-duplicate detection) for every file lacking one — served files and
+  // backups alike — capped per run to stay within Worker limits
+  const missingFp = await db
+    .select({ id: paperFiles.id, key: paperFiles.r2ObjectKey })
+    .from(paperFiles)
+    .innerJoin(papers, eq(paperFiles.paperId, papers.id))
+    .where(and(isNull(paperFiles.textFingerprint), eq(papers.status, "active")))
+    .limit(40);
+  let unreadable = 0;
+  for (const f of missingFp) {
+    const bytes = await storage.get(f.key);
+    if (!bytes) continue;
+    const { text } = await extractPdfText(bytes);
+    if (text.trim().length > 50) {
+      await db.update(paperFiles).set({ textFingerprint: fingerprintFromText(text) }).where(eq(paperFiles.id, f.id));
+      fingerprinted++;
+    } else unreadable++; // scanned image without a text layer
+  }
+
+  const result = { checked, unreadable, fingerprinted, hidden: hidden.length, hiddenIds: hidden, checkedAt: new Date().toISOString(), by: user.username };
   await db
     .insert(systemState)
     .values({ key: "integrity_scan", value: result })

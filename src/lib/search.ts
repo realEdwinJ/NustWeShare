@@ -33,20 +33,22 @@ export async function searchCatalog(raw: string, opts: { moduleLimit?: number; p
   const text = intent.code ?? (intent.rest || (hasPaperFilters(intent) ? "" : raw));
   const base = text ? await searchText(text, opts) : { modules: [] as SearchModule[], programmes: [] as SearchProgramme[] };
   let papers: SearchPaper[] = [];
-  if (hasPaperFilters(intent) && base.modules.length) {
-    const target = intent.code ? base.modules.filter((m) => m.code === intent.code) : base.modules.slice(0, 3);
-    if (target.length) {
+  const filterOnly = hasPaperFilters(intent) && !text;
+  if (hasPaperFilters(intent) && (base.modules.length || filterOnly)) {
+    const target = filterOnly ? [] : intent.code ? base.modules.filter((m) => m.code === intent.code) : base.modules.slice(0, 3);
+    if (target.length || filterOnly) {
       const db = getDb();
       const res = await db.execute(sql`
         SELECT p.id, m.code AS module_code, p.academic_year, p.semester, p.assessment_type, p.assessment_number, pf.page_count
         FROM papers p JOIN modules m ON m.id = p.module_id
         LEFT JOIN paper_files pf ON pf.paper_id = p.id AND pf.is_canonical
-        WHERE p.status = 'active' AND p.module_id IN (${sql.join(target.map((m) => sql`${m.id}`), sql`, `)})
+        WHERE p.status = 'active'
+          ${filterOnly ? sql`` : sql`AND p.module_id IN (${sql.join(target.map((m) => sql`${m.id}`), sql`, `)})`}
           ${intent.year ? sql`AND p.academic_year = ${intent.year}` : sql``}
           ${intent.type ? sql`AND p.assessment_type = ${intent.type}` : sql``}
           ${intent.number ? sql`AND p.assessment_number = ${intent.number}` : sql``}
           ${intent.semester ? sql`AND p.semester = ${intent.semester}` : sql``}
-        ORDER BY p.academic_year DESC, p.semester, p.assessment_type, p.assessment_number NULLS FIRST
+        ORDER BY ${filterOnly ? sql`p.created_at DESC` : sql`p.academic_year DESC, p.semester, p.assessment_type, p.assessment_number NULLS FIRST`}
         LIMIT 24`);
       papers = (res.rows as any[]).map((r) => ({
         id: r.id, moduleCode: r.module_code, academicYear: Number(r.academic_year), semester: Number(r.semester),

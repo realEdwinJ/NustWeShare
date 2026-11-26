@@ -184,8 +184,11 @@ export async function POST(req: NextRequest) {
 
       // Extract metadata for paper identity — use provided or fallback to current year/semester
       const nowYear = new Date().getFullYear();
-      const academicYear = meta.academicYear ?? nowYear;
-      const semester = meta.semester ?? 1;
+      // Never invent the year or semester — a wrong guess silently files the paper in the wrong place
+      if (meta.academicYear == null) throw new AppError("Choose the year for this paper.", "YEAR_REQUIRED", 400);
+      if (meta.semester == null) throw new AppError("Choose the semester for this paper.", "SEMESTER_REQUIRED", 400);
+      const academicYear = Number(meta.academicYear);
+      const semester = Number(meta.semester);
       const assessmentType = (meta.assessmentType as any) ?? null; // may be null if skipped (Spec 13 optional)
       const assessmentNumber = meta.assessmentNumber ?? null;
 
