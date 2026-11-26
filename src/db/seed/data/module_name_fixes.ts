@@ -68,13 +68,21 @@ export const MODULE_NAME_FIXES: Record<string, string> = {
   WPR510S: "Workshop Practice",
   WWT611S: "Water and Wastewater Treatment Technology 1",
   WWT721S: "Water and Wastewater Treatment Technology 2",
+  EMS520S: "Engineering Mechanics (Statics)",
+  GDE310S: "Geometric Design 1",
+  RDM411S: "Reticulation Design and Management 1&2",
+  TST110S: "Theory of Structures",
+  WAE310S: "Water Engineering 2",
+  WAE320S: "Water Engineering 3",
+  WTT411S: "Water Treatment Technology 1&2",
+  WWT411S: "Wastewater Treatment 1&2",
 };
 
 /** Patterns that indicate a scraped/garbled name rather than a real module title. */
 export function looksMalformed(name: string): boolean {
   return (
     /^[•*\-–]/.test(name) ||
-    /[–\-(,&]\s*$/.test(name) ||
+    /[–\-(,&:;]\s*$/.test(name) ||
     /\s(and|of|in|for|the|to|with)\s*$/i.test(name) ||
     /^[a-z]/.test(name) ||
     /(note:|applicants|students should|will be required|an average of)/i.test(name) ||

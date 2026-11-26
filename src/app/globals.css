@@ -148,6 +148,12 @@ html {
   -webkit-tap-highlight-color: transparent;
 }
 
+/* Grid/flex children default to min-width:auto, so long (truncated) text can stretch a column wider than
+   the screen. Let them shrink — this is what keeps truncate/ellipsis working inside grids on phones. */
+.grid > * {
+  min-width: 0;
+}
+
 html,
 body {
   overflow-x: clip; /* decorative glows must never cause sideways scrolling on phones */
