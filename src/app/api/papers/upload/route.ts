@@ -1,26 +1,32 @@
 import { NextRequest, NextResponse } from "next/server";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { getDb } from "@/lib/db";
 import { modules } from "@/db/schema/modules";
 import { papers } from "@/db/schema/papers";
 import { paperFiles } from "@/db/schema/paper_files";
 import { randomUUID } from "crypto";
 import { validatePdfFile, validatePdfMagic } from "@/lib/validation/pdf";
+import { AppError } from "@/lib/errors";
 import { sha256 } from "@/lib/duplicates/sha256";
-import { fingerprintFromText, normalizeText } from "@/lib/duplicates/textFingerprint";
+import { fingerprintFromText } from "@/lib/duplicates/textFingerprint";
+import { extractPdfText } from "@/lib/pdf/extractText";
 import { findOrCreatePaper } from "@/lib/papers/resolve";
 import { getStorage } from "@/lib/r2/client";
 import { buildR2Key } from "@/lib/r2/keys";
 import { sanitizeFilename, hashIp } from "@/lib/security/sanitize";
-import { rateLimit, limits } from "@/lib/security/rateLimit";
+import { rateLimitShared, limits } from "@/lib/security/rateLimit";
 import { logger } from "@/lib/logger";
+import { getUserFromRequest } from "@/lib/auth/current";
+import { getModuleByCode } from "@/lib/papers/queries";
+import { fulfilRequests, storedFileExists } from "@/lib/papers/moderation";
+import { getClientIp } from "@/lib/http";
 
 export const dynamic = "force-dynamic";
 
 // POST /api/papers/upload — ghost-first, module required, multi-file, per-file metadata optional
 export async function POST(req: NextRequest) {
-  const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || req.headers.get("x-real-ip") || "unknown";
-  const rl = rateLimit({ key: `upload:${hashIp(ip).slice(0, 16)}`, limit: limits.upload.limit, windowMs: limits.upload.windowMs });
+  const ip = getClientIp(req);
+  const rl = await rateLimitShared({ key: `upload:${hashIp(ip).slice(0, 16)}`, limit: limits.upload.limit, windowMs: limits.upload.windowMs });
   if (!rl.allowed) {
     return NextResponse.json({ error: { code: "RATE_LIMITED", message: "Too many uploads. Try again later." } }, { status: 429 });
   }
@@ -118,65 +124,22 @@ export async function POST(req: NextRequest) {
     } catch {}
   }
 
-  // Check session for uploaderId (optional profile)
-  let uploaderId: string | null = null;
-  const sessionCookie = req.cookies.get("session")?.value;
-  if (sessionCookie) {
-    try {
-      const { verifySessionToken } = await import("@/lib/auth/session");
-      const { getEnv } = await import("@/lib/env");
-      const env = getEnv();
-      const uid = verifySessionToken(sessionCookie, env.APP_SECRET);
-      if (uid) uploaderId = uid;
-    } catch {}
-  }
+  // Optional profile: signed-in uploads count towards your profile; "anonymous" hides your name publicly
+  const currentUser = await getUserFromRequest(req);
+  const uploaderId: string | null = currentUser?.id ?? null;
+  const anonField = form.get("anonymous");
+  const hideUploader = currentUser ? (anonField != null ? String(anonField) === "1" || String(anonField) === "true" : currentUser.uploadAnonymously) : false;
 
   const storage = getStorage();
-  let ipHash: string;
+  const ipHash = hashIp(ip);
+  // Faculty slug for the R2 key — via module → department → school → faculty
+  let facultySlug = "general";
   try {
-    ipHash = hashIp(ip);
-  } catch {
-    ipHash = "unknown";
-  }
-  // Determine faculty slug for R2 key — prefer module's direct department → school → faculty, fallback to programme chain
-  let facultySlug = "fci";
-  try {
-    const { faculties } = await import("@/db/schema/faculties");
-    const { schools } = await import("@/db/schema/schools");
-    const { departments } = await import("@/db/schema/departments");
-    // First: try module.departmentId directly (canonical)
-    if (moduleRow.departmentId) {
-      const dept = await db.select().from(departments).where(eq(departments.id, moduleRow.departmentId)).limit(1);
-      if (dept.length) {
-        const sch = await db.select().from(schools).where(eq(schools.id, dept[0].schoolId)).limit(1);
-        if (sch.length) {
-          const fac = await db.select().from(faculties).where(eq(faculties.id, sch[0].facultyId)).limit(1);
-          if (fac.length) facultySlug = fac[0].slug;
-        }
-      }
-    }
-    // Fallback: via programmeModules chain if direct failed
-    if (facultySlug === "fci" && !moduleRow.departmentId) {
-      const { programmeModules } = await import("@/db/schema/programme_modules");
-      const { programmes } = await import("@/db/schema/programmes");
-      const pm = await db.select().from(programmeModules).where(eq(programmeModules.moduleId, moduleRow.id)).limit(1);
-      if (pm.length > 0) {
-        const prog = await db.select().from(programmes).where(eq(programmes.id, pm[0].programmeId)).limit(1);
-        if (prog.length) {
-          const dept = await db.select().from(departments).where(eq(departments.id, prog[0].departmentId)).limit(1);
-          if (dept.length) {
-            const sch = await db.select().from(schools).where(eq(schools.id, dept[0].schoolId)).limit(1);
-            if (sch.length) {
-              const fac = await db.select().from(faculties).where(eq(faculties.id, sch[0].facultyId)).limit(1);
-              if (fac.length) facultySlug = fac[0].slug;
-            }
-          }
-        }
-      }
-    }
+    const info = await getModuleByCode(moduleRow.code);
+    if (info?.facultySlug) facultySlug = info.facultySlug;
   } catch {}
 
-  const results: Array<{ filename: string; status: "added" | "duplicate" | "error"; paperId?: string; message?: string; duplicatePaper?: any }> = [];
+  const results: Array<{ filename: string; status: "added" | "duplicate" | "alternate" | "error"; paperId?: string; message?: string; duplicatePaper?: any }> = [];
 
   for (let idx = 0; idx < files.length; idx++) {
     const file = files[idx];
@@ -195,6 +158,18 @@ export async function POST(req: NextRequest) {
       const hash = sha256(buf);
       const existingFile = await db.select().from(paperFiles).where(eq(paperFiles.sha256, hash)).limit(1);
       if (existingFile.length > 0) {
+        // Same bytes as a record whose paper is hidden/removed or whose object vanished → replace the stale record
+        const prevPaper = await db.select({ status: papers.status, reason: papers.deletionReason }).from(papers).where(eq(papers.id, existingFile[0].paperId)).limit(1);
+        if (prevPaper[0]?.status === "deleted" && prevPaper[0].reason !== "uploader") {
+          throw new AppError("This exact file was removed by moderators or after community reports, so it can't be re-uploaded.", "REMOVED_CONTENT", 409);
+        }
+        const stale = prevPaper[0]?.status !== "active" || !(await storedFileExists(existingFile[0].r2ObjectKey));
+        if (stale) {
+          await db.delete(paperFiles).where(eq(paperFiles.id, existingFile[0].id));
+          existingFile.length = 0;
+        }
+      }
+      if (existingFile.length > 0) {
         // Exact binary duplicate — return existing paper, don't store again (Spec 74)
         const existingPaper = await db.select().from(papers).where(eq(papers.id, existingFile[0].paperId)).limit(1);
         results.push({
@@ -209,27 +184,24 @@ export async function POST(req: NextRequest) {
 
       // Extract metadata for paper identity — use provided or fallback to current year/semester
       const nowYear = new Date().getFullYear();
-      const academicYear = meta.academicYear ?? nowYear;
-      const semester = meta.semester ?? 1;
+      // Never invent the year or semester — a wrong guess silently files the paper in the wrong place
+      if (meta.academicYear == null) throw new AppError("Choose the year for this paper.", "YEAR_REQUIRED", 400);
+      if (meta.semester == null) throw new AppError("Choose the semester for this paper.", "SEMESTER_REQUIRED", 400);
+      const academicYear = Number(meta.academicYear);
+      const semester = Number(meta.semester);
       const assessmentType = (meta.assessmentType as any) ?? null; // may be null if skipped (Spec 13 optional)
       const assessmentNumber = meta.assessmentNumber ?? null;
 
-      // If assessmentType is null/undefined (skipped), we need to still create paper? Spec says module is mandatory, other details optional.
-      // For skipped, we can default to EXAM? No, better to create paper with minimal identity: use EXAM with null number? But spec says EXAM/SUPP no number, others need number.
-      // ForMVP, if type is null, default to EXAM and allow paper creation — or create paper with type EXAM and year/semester only
-      // Alternatively, if skipped, we can still create paper with provided year/semester but type null -> we need to handle nullable type? But papers table requires assessmentType not null.
-      // So we must default: if not provided, use "EXAM" as generic, or "TEST" with null?
-      // For spec compliance, we should require type if not skipped; if skipped we can use "EXAM" as fallback but mark as pending?
-      // Simpler: if type is null, use "EXAM" (since it doesn't require number)
+      // Type is required by the schema; a skipped type defaults to EXAM (which needs no number)
       const finalType = assessmentType || "EXAM";
       const finalNumber = finalType === "EXAM" || finalType === "SUPPLEMENTARY" ? null : (assessmentNumber ?? null);
 
       // Validate year/semester range
-      if (academicYear < 2000 || academicYear > 2035) throw new Error("Invalid year");
-      if (semester !== 1 && semester !== 2) throw new Error("Invalid semester");
+      if (!Number.isInteger(academicYear) || academicYear < 2000 || academicYear > nowYear) throw new AppError("That year doesn\u2019t look right.", "INVALID_YEAR", 400);
+      if (semester !== 1 && semester !== 2) throw new AppError("Semester must be 1 or 2.", "INVALID_SEMESTER", 400);
 
       // Find or create paper identity (Spec 30)
-      const { id: paperId } = await findOrCreatePaper({
+      const { id: paperId, created: paperCreated } = await findOrCreatePaper({
         moduleId: moduleRow.id,
         academicYear,
         semester,
@@ -247,47 +219,40 @@ export async function POST(req: NextRequest) {
 
       // Text fingerprint Level 3 (Spec 28) — try extract text via pdfjs
       let textFingerprint: string | null = null;
-      try {
-        // Use pdfjs-serverless to extract text in Workers
-        const pdfjs: any = await import("pdfjs-serverless");
-        const loadingTask = pdfjs.getDocument({ data: buf, verbosity: 0 });
-        const pdf = await loadingTask.promise;
-        let rawText = "";
-        const maxPages = Math.min(pdf.numPages, 5);
-        for (let i = 1; i <= maxPages; i++) {
-          const page = await pdf.getPage(i);
-          const content = await page.getTextContent();
-          const strings = content.items.map((it: any) => (it.str ? it.str : "")).join(" ");
-          rawText += strings + " ";
+      const extracted = await extractPdfText(buf);
+      if (extracted.error) logger.warn("text_extraction_failed", { filename: originalName, error: extracted.error.slice(0, 200) });
+      if (extracted.text.trim().length > 50) {
+        textFingerprint = fingerprintFromText(extracted.text);
+        // Same text as a paper with a different identity → likely a mislabelled duplicate. Same identity is fine (another scan).
+        const existingByText = await db
+          .select({ paperId: paperFiles.paperId })
+          .from(paperFiles)
+          .innerJoin(papers, eq(paperFiles.paperId, papers.id))
+          .where(and(eq(paperFiles.textFingerprint, textFingerprint), eq(papers.status, "active")))
+          .limit(1);
+        if (existingByText.length > 0 && existingByText[0].paperId !== paperId) {
+          if (paperCreated) await db.delete(papers).where(eq(papers.id, paperId)).catch(() => {});
+          results.push({
+            filename: originalName,
+            status: "duplicate",
+            paperId: existingByText[0].paperId,
+            message: "This looks like a paper we already have (same text), filed under different details. Check the year, semester and type.",
+          });
+          continue;
         }
-        if (rawText.trim().length > 50) {
-          textFingerprint = fingerprintFromText(rawText);
-          // Check for near-duplicate via text fingerprint (different scan, same content)
-          const existingByText = await db.select().from(paperFiles).where(eq(paperFiles.textFingerprint, textFingerprint)).limit(1);
-          if (existingByText.length > 0) {
-            // Not exact binary but same text content — flag as potential duplicate, but still allow? For MVP, we flag but still store as separate file under same paper?
-            // Per Spec 32, show duplicate dialog but allow upload anyway — for API, we can return duplicate status but still create file?
-            // For now, treat as duplicate but still create? Let's return duplicate status with existing paper, but still allow caller to decide "upload anyway" via flag
-            // If caller didn't set force, we return duplicate
-            // Check if existing file's paper is same identity? If same paper identity, it's expected to be same paper (Spec 30: multiple files per paper)
-            // So we should not block if it's same paper identity — just create new file under same paper
-            // Only flag if different paper identity but same text
-            const existingPaperForText = await db.select().from(papers).where(eq(papers.id, existingByText[0].paperId)).limit(1);
-            if (existingPaperForText[0] && existingPaperForText[0].id !== paperId) {
-              results.push({
-                filename: originalName,
-                status: "duplicate",
-                paperId: existingPaperForText[0].id,
-                message: "Possible duplicate — text fingerprint matches existing paper.",
-                duplicatePaper: existingPaperForText[0],
-              });
-              continue;
-            }
-          }
-        }
-      } catch (e) {
-        // Text extraction failed — likely scanned PDF, will be handled via perceptual hash stub (Level 4) in future
-        // For now, no fingerprint
+      }
+
+      // An existing paper with a working file keeps it (and its uploader's credit). A new copy is stored
+      // only as a non-canonical backup; it becomes the served file only if the paper has no working file.
+      let becomesCanonical = paperCreated;
+      if (!paperCreated) {
+        const current = await db
+          .select({ key: paperFiles.r2ObjectKey })
+          .from(paperFiles)
+          .where(and(eq(paperFiles.paperId, paperId), eq(paperFiles.isCanonical, true)));
+        let healthy = false;
+        for (const c of current) if (await storedFileExists(c.key)) { healthy = true; break; }
+        becomesCanonical = !healthy;
       }
 
       // Generate R2 key and store
@@ -296,56 +261,77 @@ export async function POST(req: NextRequest) {
 
       await storage.put(r2Key, buf, "application/pdf");
 
-      // Create paper_files row
-      const inserted = await db
-        .insert(paperFiles)
-        .values({
+      // Create paper_files row. The DB allows one canonical file per paper; if a concurrent upload claimed it
+      // first, this copy is stored as a backup instead.
+      const fileValues = {
+        paperId,
+        r2ObjectKey: r2Key,
+        originalFilename: originalName,
+        fileSize: buf.length,
+        mimeType: "application/pdf",
+        sha256: hash,
+        pageCount,
+        textFingerprint,
+        perceptualHash: null, // Level 4 stub
+        uploaderId,
+        hideUploader,
+        uploadIpHash: ipHash,
+      };
+      try {
+        if (becomesCanonical) {
+          // Demote the old (broken) canonical file first so the new one can take the slot
+          await db.update(paperFiles).set({ isCanonical: false }).where(eq(paperFiles.paperId, paperId));
+          try {
+            await db.insert(paperFiles).values({ ...fileValues, isCanonical: true });
+          } catch (e: any) {
+            const m = String(e?.message || "") + String(e?.cause?.message || "");
+            if (!m.includes("uq_pf_one_canonical")) throw e;
+            becomesCanonical = false;
+            await db.insert(paperFiles).values({ ...fileValues, isCanonical: false });
+          }
+        } else {
+          await db.insert(paperFiles).values({ ...fileValues, isCanonical: false });
+        }
+      } catch (e) {
+        // Don't leave an unreferenced object in storage if the DB write failed
+        await storage.delete(r2Key).catch(() => {});
+        throw e;
+      }
+
+      if (!becomesCanonical) {
+        results.push({
+          filename: originalName,
+          status: "alternate",
           paperId,
-          r2ObjectKey: r2Key,
-          originalFilename: originalName,
-          fileSize: buf.length,
-          mimeType: "application/pdf",
-          sha256: hash,
-          pageCount,
-          textFingerprint,
-          perceptualHash: null, // Level 4 stub
-          isCanonical: true, // will be adjusted if multiple files per paper
-          uploaderId,
-          uploadIpHash: ipHash,
-        })
-        .returning({ id: paperFiles.id });
+          message: "We already have this paper, so your copy was kept as a backup. It won't replace the existing file.",
+        });
+        continue;
+      }
 
       // Update contribution stats for logged-in uploader (Spec 22)
       if (uploaderId) {
         try {
           const { contributionStats } = await import("@/db/schema/contribution_stats");
-          const { eq: eq2 } = await import("drizzle-orm");
-          const existing = await db.select().from(contributionStats).where(eq2(contributionStats.userId, uploaderId)).limit(1);
+          const existing = await db.select().from(contributionStats).where(eq(contributionStats.userId, uploaderId)).limit(1);
           if (existing.length === 0) {
             await db.insert(contributionStats).values({ userId: uploaderId, approvedCount: 1 });
           } else {
-            await db.update(contributionStats).set({ approvedCount: (existing[0].approvedCount || 0) + 1, lastContributionAt: new Date() }).where(eq2(contributionStats.userId, uploaderId));
+            await db.update(contributionStats).set({ approvedCount: (existing[0].approvedCount || 0) + 1, lastContributionAt: new Date() }).where(eq(contributionStats.userId, uploaderId));
           }
         } catch {}
       }
 
-      // If this paper now has multiple files, ensure only one canonical (prefer newest with text)
       try {
-        const allFiles = await db.select().from(paperFiles).where(eq(paperFiles.paperId, paperId));
-        if (allFiles.length > 1) {
-          // Pick best as canonical via heuristic
-          const { pickBestFile } = await import("@/lib/papers/canonical");
-          const best = pickBestFile(allFiles.map((f) => ({ id: f.id, textFingerprint: f.textFingerprint, pageCount: f.pageCount, fileSize: f.fileSize, createdAt: f.createdAt })));
-          if (best) {
-            const { setCanonical } = await import("@/lib/papers/canonical");
-            await setCanonical(paperId, best.id);
-          }
-        }
+        await fulfilRequests({ id: paperId, moduleId: moduleRow.id, academicYear, assessmentType: finalType as any });
       } catch {}
-
       results.push({ filename: originalName, status: "added", paperId, message: "Paper added successfully." });
     } catch (err: any) {
       const msg = err?.message || "Failed to process file.";
+      if (err instanceof AppError) {
+        logger.uploadError({ filename: originalName, error: msg, ipHash: ipHash.slice(0, 8) });
+        results.push({ filename: originalName, status: "error", message: msg });
+        continue;
+      }
       // Map known errors to friendly messages (Spec 62)
       let friendly = msg;
       if (msg.includes("3 MB") || msg.toLowerCase().includes("larger")) friendly = "This PDF is larger than the 3 MB limit.";
@@ -358,11 +344,12 @@ export async function POST(req: NextRequest) {
 
   const added = results.filter((r) => r.status === "added").length;
   const duplicates = results.filter((r) => r.status === "duplicate").length;
+  const backups = results.filter((r) => r.status === "alternate").length;
   const errors = results.filter((r) => r.status === "error").length;
 
   return NextResponse.json({
     results,
-    summary: { total: files.length, added, duplicates, errors },
-    message: `Thank you for contributing to NustWeShare ❤️ Papers uploaded: ${files.length} Successfully added: ${added} Potential duplicates: ${duplicates}`,
+    summary: { total: files.length, added, backups, duplicates, errors },
+    message: `Thank you for contributing to NustWeShare ❤️ Papers uploaded: ${files.length} · Added: ${added} · Kept as backup: ${backups} · Duplicates: ${duplicates}`,
   });
 }

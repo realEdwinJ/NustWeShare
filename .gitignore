@@ -49,3 +49,4 @@ worker-configuration.d.ts
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+public/pdf.worker.min.mjs

@@ -1,27 +1,25 @@
 import { NextRequest, NextResponse } from "next/server";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { getDb } from "@/lib/db";
 import { papers } from "@/db/schema/papers";
+import { getClientIp, isUuid, jsonError } from "@/lib/http";
+import { rateLimitShared } from "@/lib/security/rateLimit";
+import { hashIp } from "@/lib/security/sanitize";
 
 export const dynamic = "force-dynamic";
 
-// POST /api/papers/[id]/view — increment views with dedup via cookie (Spec 42)
+// POST /api/papers/[id]/view — count a read; refreshes from the same network within an hour count once (Spec 42).
+// De-duplicated server-side so no per-paper cookies accumulate in the browser.
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const cookieName = `viewed_${id}`;
-  const alreadyViewed = req.cookies.get(cookieName)?.value === "1";
-  if (alreadyViewed) {
-    return NextResponse.json({ ok: true, deduped: true });
-  }
+  if (!isUuid(id)) return jsonError("NOT_FOUND", "Paper not found.", 404);
   try {
-    const db = getDb();
-    await db.update(papers).set({ views: sql`${papers.views} + 1` }).where(eq(papers.id, id));
-    const res = NextResponse.json({ ok: true, deduped: false });
-    // Set cookie 1 hour to dedup refreshes (Spec 42)
-    res.cookies.set(cookieName, "1", { httpOnly: true, sameSite: "lax", maxAge: 3600, path: "/" });
-    return res;
+    const first = await rateLimitShared({ key: `view:${hashIp(getClientIp(req)).slice(0, 16)}:${id}`, limit: 1, windowMs: 60 * 60 * 1000 });
+    if (!first.allowed) return NextResponse.json({ ok: true, deduped: true });
+    await getDb().update(papers).set({ views: sql`${papers.views} + 1` }).where(and(eq(papers.id, id), eq(papers.status, "active")));
+    return NextResponse.json({ ok: true, deduped: false });
   } catch (e) {
     console.error("[api/papers/[id]/view]", e);
-    return NextResponse.json({ error: { code: "DB_ERROR", message: "Could not track view." } }, { status: 500 });
+    return jsonError("DB_ERROR", "Could not track view.", 500);
   }
 }

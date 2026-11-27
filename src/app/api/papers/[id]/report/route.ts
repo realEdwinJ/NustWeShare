@@ -2,12 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { eq, count } from "drizzle-orm";
 import { getDb } from "@/lib/db";
 import { papers } from "@/db/schema/papers";
-import { paperFiles } from "@/db/schema/paper_files";
 import { reports } from "@/db/schema/reports";
 import { hashIp } from "@/lib/security/sanitize";
-import { rateLimit, limits } from "@/lib/security/rateLimit";
+import { rateLimitShared, limits } from "@/lib/security/rateLimit";
 import { logger } from "@/lib/logger";
-import { getStorage } from "@/lib/r2/client";
+import { removePaper } from "@/lib/papers/moderation";
+import { getUserFromRequest } from "@/lib/auth/current";
+import { getClientIp } from "@/lib/http";
 
 export const dynamic = "force-dynamic";
 
@@ -16,10 +17,10 @@ const VALID_REASONS = new Set(["duplicate", "wrong_module", "wrong_year", "wrong
 // POST /api/papers/[id]/report — anonymous, one report per reporter per paper, auto 5-delete (Spec 33-34)
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || req.headers.get("x-real-ip") || "unknown";
+  const ip = getClientIp(req);
   const ipHash = hashIp(ip);
 
-  const rl = rateLimit({ key: `report:${ipHash.slice(0, 16)}`, limit: limits.report.limit, windowMs: limits.report.windowMs });
+  const rl = await rateLimitShared({ key: `report:${ipHash.slice(0, 16)}`, limit: limits.report.limit, windowMs: limits.report.windowMs });
   if (!rl.allowed) {
     return NextResponse.json({ error: { code: "RATE_LIMITED", message: "Too many reports. Try again soon." } }, { status: 429 });
   }
@@ -38,18 +39,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json({ error: { code: "VALIDATION_ERROR", message: "Invalid report reason." } }, { status: 400 });
   }
 
-  // Try to get reporterId from session if logged in (optional)
-  let reporterId: string | null = null;
-  const sessionCookie = req.cookies.get("session")?.value;
-  if (sessionCookie) {
-    try {
-      const { verifySessionToken } = await import("@/lib/auth/session");
-      const { getEnv } = await import("@/lib/env");
-      const env = getEnv();
-      const uid = verifySessionToken(sessionCookie, env.APP_SECRET);
-      if (uid) reporterId = uid;
-    } catch {}
-  }
+  const reporterId: string | null = (await getUserFromRequest(req))?.id ?? null;
 
   try {
     const db = getDb();
@@ -62,7 +52,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     // Check duplicate report from same reporter (Spec 34) — use DB-level filter, not in-memory
     const { and } = await import("drizzle-orm");
     if (reporterId) {
-      const { eq: eq2 } = await import("drizzle-orm");
       const existing = await db.select().from(reports).where(and(eq(reports.paperId, id), eq(reports.reporterId, reporterId))).limit(1);
       if (existing.length > 0) {
         return NextResponse.json({ error: { code: "ALREADY_REPORTED", message: "You've already reported this paper." } }, { status: 409 });
@@ -96,17 +85,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       // Check if already deleted
       const fresh = await db.select().from(papers).where(eq(papers.id, id)).limit(1);
       if (fresh[0]?.status !== "deleted") {
-        await db.update(papers).set({ status: "deleted", deletedAt: new Date(), deletionReason: "5_reports" }).where(eq(papers.id, id));
-        // Delete R2 objects for this paper (all files)
-        try {
-          const files = await db.select().from(paperFiles).where(eq(paperFiles.paperId, id));
-          const storage = getStorage();
-          for (const f of files) {
-            try {
-              await storage.delete(f.r2ObjectKey);
-            } catch {}
-          }
-        } catch {}
+        await removePaper(id, "5_reports");
         logger.info("paper_auto_deleted_5_reports", { paperId: id, reportCount });
         return NextResponse.json({ ok: true, deleted: true, reportCount, message: "Paper removed after 5 reports. Thank you for keeping the community clean." });
       }

@@ -118,40 +118,60 @@ function isHyperdriveConnectionString(cs: string): boolean {
   return cs.includes("hyperdrive") || cs.includes("hyperdrive.cloudflare.com") || cs.startsWith("postgres://hyperdrive");
 }
 
-function getPool(): Pool {
-  if (pool) return pool;
+type DrizzleDb = ReturnType<typeof drizzle<typeof schema>>;
+
+function createPool(): Pool {
   const connectionString = getConnectionString();
   const isHyperdrive = isHyperdriveConnectionString(connectionString);
-  // Determine SSL: Hyperdrive manages TLS; direct Neon requires ssl mode
-  const needsSsl = !isHyperdrive && (process.env.NODE_ENV === "production" || connectionString.includes("sslmode=require") || connectionString.includes("neon.tech"));
-  pool = new Pool({
+  // Hyperdrive manages TLS; direct Neon/remote Postgres requires SSL
+  const needsSsl = !isHyperdrive && (connectionString.includes("sslmode=require") || connectionString.includes("neon.tech"));
+  const workers = isWorkersRuntime();
+  const p = new Pool({
     connectionString,
     ssl: isHyperdrive ? undefined : needsSsl ? { rejectUnauthorized: false } : undefined,
-    max: 10, // increased from 5 to handle concurrent RSC prefetch (home has ~6 queries, browse faculty 6) — prevents click->error then refresh works
-    idleTimeoutMillis: 30000,
+    // In Workers each request gets its own small pool (Hyperdrive does the real pooling)
+    max: workers ? 5 : 10,
+    idleTimeoutMillis: workers ? 5000 : 30000,
     connectionTimeoutMillis: 15000,
-    allowExitOnIdle: false,
-    // Never use statement_timeout via pool options — let Hyperdrive manage
+    allowExitOnIdle: true,
   });
-  pool.on("error", (err) => {
-    console.error("[db] pool error", err.message);
-    // Don't crash process; allow retry. Close pool on fatal error to allow fresh connection on next getDb()
-    if ((err as any)?.code === "ECONNRESET" || (err as any)?.message?.includes("terminating") || (err as any)?.message?.includes("timeout")) {
-      pool = null;
-      dbInstance = null;
-    }
-  });
-  pool.on("connect", () => {
-    // Optional: log pool connect for debugging transient click errors
-    // console.log("[db] pool connect");
-  });
-  return pool;
+  p.on("error", (err) => console.error("[db] pool error", err.message));
+  return p;
 }
 
-export function getDb() {
+/**
+ * In Cloudflare Workers, sockets belong to the request that opened them: reusing a pool across requests
+ * makes later requests hang ("Worker's code had hung"). So we scope the pool to the request's
+ * ExecutionContext. Outside Workers (next dev, scripts) a single process-wide pool is used.
+ */
+const perRequest = new WeakMap<object, { pool: Pool; db: DrizzleDb }>();
+
+function requestScope(): object | null {
+  if (!isWorkersRuntime()) return null;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { getCloudflareContext } = require("@opennextjs/cloudflare");
+    const ctx = getCloudflareContext();
+    return (ctx?.ctx as object) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export function getDb(): DrizzleDb {
+  const scope = requestScope();
+  if (scope) {
+    let entry = perRequest.get(scope);
+    if (!entry) {
+      const p = createPool();
+      entry = { pool: p, db: drizzle(p, { schema }) };
+      perRequest.set(scope, entry);
+    }
+    return entry.db;
+  }
   if (dbInstance) return dbInstance;
-  const p = getPool();
-  dbInstance = drizzle(p, { schema });
+  pool = createPool();
+  dbInstance = drizzle(pool, { schema });
   return dbInstance;
 }
 

@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "uq_pf_one_canonical" ON "paper_files" USING btree ("paper_id") WHERE is_canonical;

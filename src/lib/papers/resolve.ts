@@ -34,6 +34,27 @@ export async function findOrCreatePaper(identity: PaperIdentity): Promise<{ id: 
     return { id: existing[0].id, created: false };
   }
 
+  // A paper hidden because its file went missing is revived rather than duplicated
+  const hidden = await db
+    .select({ id: papers.id })
+    .from(papers)
+    .where(
+      and(
+        eq(papers.moduleId, identity.moduleId),
+        eq(papers.academicYear, identity.academicYear),
+        eq(papers.semester, identity.semester),
+        eq(papers.assessmentType, identity.assessmentType as any),
+        identity.assessmentNumber === null ? isNull(papers.assessmentNumber) : eq(papers.assessmentNumber, identity.assessmentNumber),
+        eq(papers.status, "pending"),
+        eq(papers.deletionReason, "file_missing")
+      )
+    )
+    .limit(1);
+  if (hidden.length > 0) {
+    await db.update(papers).set({ status: "active", deletionReason: null, updatedAt: new Date() }).where(eq(papers.id, hidden[0].id));
+    return { id: hidden[0].id, created: false };
+  }
+
   const inserted = await db
     .insert(papers)
     .values({

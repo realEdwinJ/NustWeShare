@@ -1,72 +1,85 @@
 import { NextRequest, NextResponse } from "next/server";
 
+// Note: Next 16 prefers the `proxy.ts` convention, but proxy runs only on the Node runtime, which the
+// OpenNext Cloudflare adapter can't deploy (tried in this repo's history; it broke the Workers build).
+// Keep `middleware.ts` until OpenNext supports proxy.
+
+const MUTATING = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+
+function isCrossSite(req: NextRequest): boolean {
+  const site = req.headers.get("sec-fetch-site");
+  if (site && site !== "same-origin" && site !== "none") return true;
+  const origin = req.headers.get("origin");
+  if (!origin) return false; // non-browser clients (curl, server-to-server) — protected by auth/secrets instead
+  try {
+    return new URL(origin).host !== (req.headers.get("x-forwarded-host") || req.headers.get("host"));
+  } catch {
+    return true;
+  }
+}
+
 export function middleware(req: NextRequest) {
-  // CSRF check for state-changing POST to /api (Spec 51) — verify Origin is same-site if present
-  if (req.method === "POST" && req.nextUrl.pathname.startsWith("/api/")) {
-    const origin = req.headers.get("origin");
-    const host = req.headers.get("host");
-    if (origin && host && !origin.includes(host)) {
-      console.warn("[csrf] cross-site POST", { path: req.nextUrl.pathname, origin, host });
-    }
+  const { pathname } = req.nextUrl;
+  const isApi = pathname.startsWith("/api/");
+
+  // CSRF (Spec 51): block cross-site state-changing API requests outright
+  if (isApi && MUTATING.has(req.method) && isCrossSite(req)) {
+    return NextResponse.json({ error: { code: "CSRF", message: "Cross-site request blocked." } }, { status: 403 });
+  }
+
+  // One canonical URL per module: /modules/MCI511S → /modules/mci511s
+  const mod = /^\/modules\/([^/]+)$/.exec(pathname);
+  if (mod && req.method === "GET" && mod[1] !== mod[1].toLowerCase()) {
+    const url = req.nextUrl.clone();
+    url.pathname = `/modules/${mod[1].toLowerCase()}`;
+    return NextResponse.redirect(url, 308);
   }
 
   const res = NextResponse.next();
-
-  // Security headers per Spec 51 (CSP, nosniff, frame deny, etc.)
+  if (process.env.NODE_ENV === "production" && req.nextUrl.protocol === "https:") {
+    res.headers.set("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+  }
   res.headers.set("X-Content-Type-Options", "nosniff");
-  res.headers.set("X-Frame-Options", "DENY");
+  res.headers.set("X-Frame-Options", "SAMEORIGIN");
   res.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
-  res.headers.set("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
-  res.headers.set(
-    "Content-Security-Policy",
-    [
-      "default-src 'self'",
-      // unsafe-eval removed; pdfjs worker loaded via blob: or CDN should use workerSrc without eval
-      "script-src 'self' 'unsafe-inline'",
-      "style-src 'self' 'unsafe-inline'",
-      "img-src 'self' data: blob:",
-      "font-src 'self' data:",
-      "connect-src 'self' https://cdnjs.cloudflare.com",
-      "object-src 'none'",
-      "base-uri 'self'",
-      "form-action 'self'",
-      "frame-ancestors 'none'",
-      "worker-src 'self' blob:",
-    ].join("; ")
-  );
-
-  // For API routes, ensure we don't cache sensitive responses
-  // IMPORTANT: only no-store for mutating / private endpoints, not for public GET listings (papers, modules, search, faculties)
-  // Previous bug: /api/papers (GET public) was forced no-store, conflicting with handler's public s-maxage
-  if (req.nextUrl.pathname.startsWith("/api/")) {
-    const isPrivate =
-      req.nextUrl.pathname.startsWith("/api/auth") ||
-      req.nextUrl.pathname.startsWith("/api/papers/upload") ||
-      req.nextUrl.pathname.startsWith("/api/papers/") && req.nextUrl.pathname.includes("/report") ||
-      req.nextUrl.pathname.startsWith("/api/dashboard") ||
-      req.nextUrl.pathname === "/api/diag" ||
-      req.nextUrl.pathname === "/api/health";
-    const isPublicGet = req.method === "GET" && [
-      "/api/papers",
-      "/api/modules",
-      "/api/faculties",
-      "/api/schools",
-      "/api/departments",
-      "/api/programmes",
-      "/api/search",
-      "/api/leaderboard",
-    ].some((p) => req.nextUrl.pathname === p || req.nextUrl.pathname.startsWith(p + "/"));
-    if (isPrivate) {
-      res.headers.set("Cache-Control", "no-store");
-    } else if (isPublicGet) {
-      // Let route handler control cache; don't override
-    }
+  res.headers.set("Permissions-Policy", "camera=(), microphone=(), geolocation=(), interest-cohort=()");
+  if (!isApi) {
+    res.headers.set(
+      "Content-Security-Policy",
+      [
+        "default-src 'self'",
+        `script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'${process.env.NODE_ENV === "development" ? " 'unsafe-eval'" : ""}`,
+        "style-src 'self' 'unsafe-inline'",
+        "img-src 'self' data: blob:",
+        "font-src 'self' data:",
+        "connect-src 'self'",
+        "frame-src 'self' blob:",
+        "object-src 'none'",
+        "base-uri 'self'",
+        "form-action 'self'",
+        "frame-ancestors 'self'",
+        "worker-src 'self' blob:",
+        "manifest-src 'self'",
+      ].join("; ")
+    );
   }
 
+  if (isApi) {
+    const isPrivate =
+      pathname.startsWith("/api/auth") ||
+      pathname.startsWith("/api/account") ||
+      pathname.startsWith("/api/bookmarks") ||
+      pathname.startsWith("/api/admin") ||
+      pathname.startsWith("/api/dashboard") ||
+      pathname.startsWith("/api/papers/upload") ||
+      pathname.includes("/report") ||
+      pathname === "/api/diag" ||
+      pathname === "/api/health";
+    if (isPrivate) res.headers.set("Cache-Control", "no-store");
+  }
   return res;
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|pdf.worker|icons/).*)"],
 };
-

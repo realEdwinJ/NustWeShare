@@ -12,18 +12,39 @@ Google search + clean academic archive + simple document viewer — not a univer
 
 ## Features
 
-- **Browse** `Faculty → School → Department → Programme → Year → Module → Papers` + **Search** `ILIKE` + `pg_trgm` (no Elasticsearch) — partial `ELC`, `Electronic`, `511S`
-- **Module canonical** — one row per code (e.g., `MCI511S` 7 programmes) via `programme_modules` join; courses are filters, not owners
-- **Ghost uploads** — no account, no email, no OTP; optional profile `username + 5-digit PIN` (hashed, lockout after 5)
-- **Multi-PDF** with per-file `Type/Number/Year/Semester`, filename regex `ELC_2024_TEST_1.pdf` suggestions (no AI), `Skip` allowed with friendly nudge
-- **Validation** `3 MB` `application/pdf` magic `%PDF` + `pdf-lib` corrupt check, sanitized R2 keys
-- **Storage** PostgreSQL metadata + Cloudflare R2 private (not local FS, not Postgres binary)
-- **Duplicates 4-level** — `SHA-256` exact, metadata signals, text fingerprint (normalized `SHA-256`), `pHash` stub for scans; `paper` vs `paper_files` canonical
-- **Community moderation** — report categories, `5 reports` auto soft-delete + R2 delete, one report per person
-- **Leaderboard + Dashboard** — rank by approved papers, ghost counts as `Anonymous`
-- **Security** `CSP`, `httpOnly Secure SameSite` cookies, `rateLimit` (upload 10/h, search 60/m, report 5/m, login 5/15m), `sanitizeR2Key`, no stack leak
-- **SEO** clean URLs `/febe/modules/mci511s` `/modules/mci511s/2025/test-1` via rewrites, `sitemap.xml` 500 modules, `robots.txt`
-- **Mobile-first** 44px touch, `h-[80vh]` viewer with `pdf.js` + iframe fallback, `Cache-Control` 1h academic, `immutable` static
+**Find**
+- Ranked, typo-tolerant search (`pg_trgm`) across 900+ modules and programmes — exact code > prefix > name; `⌘K` / `/` command palette anywhere
+- Browse Faculty → Department → Programme (filter by year of study, "only modules with papers") → Module → Papers
+- Module pages: filter by year / type / semester, grouped or table view, reads & downloads, programmes that teach it
+
+**Read**
+- Built-in PDF reader (self-hosted pdf.js worker, HTTP Range streaming): HiDPI lazy rendering, selectable text layer, find-in-document with highlights, fit-width/fit-page/zoom (Ctrl+scroll), rotate, thumbnails, full-screen, keyboard shortcuts, resume where you left off
+
+**Download**
+- Single PDFs with clean names (`MCI511S_2024_S1_Exam.pdf`), resumable (Range) and de-duplicated counters
+- Bulk: tick papers → one ZIP; **whole module (or current filter) → one ZIP**, built in the browser with live progress + cancel (no Worker CPU), year folders + README
+
+**Contribute**
+- Anonymous uploads (no account), per-file progress, details pre-filled from filenames, "apply to all", deep links (`/upload?module=MCI511S&year=2024&type=EXAM`)
+- 4-level duplicate detection (SHA-256, text fingerprint, identity), paper requests with upvotes that auto-close when someone uploads a match
+- Reporting with 5-report auto-removal, moderator queue (`/admin`), uploaders can fix or remove their own papers
+
+**Profile (optional — username + 5-digit PIN, no email)**
+- Public profile, dashboard with stats and upload management, saved papers & followed modules (new-paper badges), reading history
+- Settings: avatar colour/emoji, bio, programme & year, theme (light/dark/auto, synced), reduce motion, reader default zoom, download naming, ZIP layout, privacy (public profile, leaderboard visibility, anonymous-by-default), change PIN, sign out other devices, JSON data export, delete account
+
+**Platform**
+- Dark mode, responsive/mobile-first, accessible (keyboard, ARIA, focus management), PWA manifest, SEO (sitemap with modules + papers, JSON-LD)
+- Security: signed expiring sessions with server-side revocation, CSRF origin enforcement, strict CSP, rate limits, hashed IPs, timing-safe secrets
+
+### Operations
+
+- **Hosting:** Cloudflare account `977c154319bfbdee6a3ecfd81b69d53d` (Worker `nustweshare`, R2 bucket `nustweshare-papers`, Hyperdrive → Neon). Deploy with `npm run deploy` (needs `CLOUDFLARE_API_TOKEN`). URL: https://nustweshare.longa-web.workers.dev
+
+- **After deploying this version run the migration once:** `DATABASE_URL=… npm run db:migrate` (adds profile/preferences columns, bookmarks and paper-request tables — additive only).
+- Make someone a moderator: `curl -X POST https://<host>/api/admin/bootstrap -H "x-admin-secret: $ADMIN_SECRET" -H "content-type: application/json" -d '{"username":"alice"}'`
+- `GET /api/diag` now requires the same `x-admin-secret` header.
+- Local `wrangler dev` with Hyperdrive: set `CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE=postgresql://…` in your shell (no credentials in `wrangler.jsonc`).
 
 ## Stack (Spec 93)
 

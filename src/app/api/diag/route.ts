@@ -3,6 +3,13 @@ import { NextRequest, NextResponse } from "next/server";
 export const dynamic = "force-dynamic";
 
 export async function GET(_req: NextRequest) {
+  // Operator-only: requires the x-admin-secret header (never expose connection details publicly)
+  {
+    const { getEnv } = await import("@/lib/env");
+    const secret = getEnv().ADMIN_SECRET;
+    const given = _req.headers.get("x-admin-secret") || "";
+    if (!secret || given !== secret) return NextResponse.json({ error: { code: "FORBIDDEN", message: "Forbidden." } }, { status: 403 });
+  }
   let hyperdrivePresent = false;
   let hasConnectionString = false;
   let prefix = "n/a";
@@ -23,7 +30,7 @@ export async function GET(_req: NextRequest) {
     hyperdrivePresent = !!ctx?.env?.HYPERDRIVE;
     hasConnectionString = !!ctx?.env?.HYPERDRIVE?.connectionString;
     if (ctx?.env?.HYPERDRIVE?.connectionString) {
-      prefix = String(ctx.env.HYPERDRIVE.connectionString).slice(0, 30);
+      prefix = String(ctx.env.HYPERDRIVE.connectionString).split("://")[0] + "://…";
     }
   } catch (e: any) {
     getCloudflareContextError = e?.message?.slice(0, 200) || String(e).slice(0, 200);

@@ -1,6 +1,8 @@
 {
 	"$schema": "./node_modules/wrangler/config-schema.json",
 	"name": "nustweshare",
+	// Billed account (moved from the previous account)
+	"account_id": "977c154319bfbdee6a3ecfd81b69d53d",
 	"main": ".open-next/worker.js",
 	"compatibility_date": "2026-08-25",
 	"compatibility_flags": [
@@ -15,7 +17,7 @@
 		"enabled": true
 	},
 	"vars": {
-		"NEXT_PUBLIC_APP_URL": "https://nustweshare.workers.dev"
+		"NEXT_PUBLIC_APP_URL": "https://nustweshare.longa-web.workers.dev"
 	},
 	"r2_buckets": [
 		{
@@ -27,29 +29,7 @@
 	"hyperdrive": [
 		{
 			"binding": "HYPERDRIVE",
-			"id": "507d02782751464e9d9b46bcd732f2ea",
-			"localConnectionString": "postgresql://neondb_owner:npg_IrtjP2Vcb9BW@ep-steep-dew-ayob9oue-pooler.c-5.us-east-2.aws.neon.tech/neondb?sslmode=require"
+			"id": "46fc43cba63945b981c8cd8b2d9a47bc"
 		}
-	],
-	"env": {
-		"preview": {
-			"vars": {
-				"NEXT_PUBLIC_APP_URL": "https://preview.nustweshare.workers.dev"
-			},
-			"hyperdrive": [
-				{
-					"binding": "HYPERDRIVE",
-					"id": "507d02782751464e9d9b46bcd732f2ea",
-					"localConnectionString": "postgresql://neondb_owner:npg_IrtjP2Vcb9BW@ep-steep-dew-ayob9oue-pooler.c-5.us-east-2.aws.neon.tech/neondb?sslmode=require"
-				}
-			],
-			"r2_buckets": [
-				{
-					"binding": "PAPERS_BUCKET",
-					"bucket_name": "nustweshare-papers-preview",
-					"preview_bucket_name": "nustweshare-papers-preview"
-				}
-			]
-		}
-	}
+	]
 }

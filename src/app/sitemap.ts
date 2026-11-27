@@ -1,32 +1,36 @@
 import type { MetadataRoute } from "next";
 
 export const dynamic = "force-dynamic";
+export const revalidate = 3600;
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  const base = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+  const base = (process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000").replace(/\/$/, "");
+  const now = new Date();
   const urls: MetadataRoute.Sitemap = [
-    { url: `${base}/`, lastModified: new Date(), changeFrequency: "daily", priority: 1 },
-    { url: `${base}/browse`, lastModified: new Date(), changeFrequency: "daily", priority: 0.9 },
-    { url: `${base}/febe`, lastModified: new Date(), changeFrequency: "weekly", priority: 0.8 },
-    { url: `${base}/fci`, lastModified: new Date(), changeFrequency: "weekly", priority: 0.8 },
-    { url: `${base}/search`, lastModified: new Date(), changeFrequency: "daily", priority: 0.8 },
-    { url: `${base}/upload`, lastModified: new Date(), changeFrequency: "weekly", priority: 0.7 },
-    { url: `${base}/leaderboard`, lastModified: new Date(), changeFrequency: "daily", priority: 0.6 },
-    { url: `${base}/copyright`, lastModified: new Date(), changeFrequency: "yearly", priority: 0.3 },
+    { url: `${base}/`, lastModified: now, changeFrequency: "daily", priority: 1 },
+    { url: `${base}/browse`, lastModified: now, changeFrequency: "weekly", priority: 0.9 },
+    { url: `${base}/upload`, changeFrequency: "monthly", priority: 0.6 },
+    { url: `${base}/leaderboard`, changeFrequency: "daily", priority: 0.5 },
+    { url: `${base}/help`, changeFrequency: "monthly", priority: 0.4 },
+    { url: `${base}/copyright`, changeFrequency: "yearly", priority: 0.2 },
+    { url: `${base}/privacy`, changeFrequency: "yearly", priority: 0.2 },
   ];
-
-  // Add modules (limit to 100 for sitemap size, paginated in real)
   try {
     const { getDb } = await import("@/lib/db");
-    const { modules } = await import("@/db/schema/modules");
+    const { sql } = await import("drizzle-orm");
     const db = getDb();
-    const mods = await db.select({ code: modules.code }).from(modules).limit(500);
-    for (const m of mods) {
-      urls.push({ url: `${base}/modules/${m.code.toLowerCase()}`, lastModified: new Date(), changeFrequency: "weekly", priority: 0.7 });
-    }
+    // Modules with papers first (most useful to searchers), then papers themselves
+    const mods = await db.execute(sql`
+      SELECT m.code, max(p.updated_at) AS updated FROM modules m
+      JOIN papers p ON p.module_id = m.id AND p.status = 'active'
+      GROUP BY m.code ORDER BY updated DESC LIMIT 5000`);
+    for (const m of mods.rows as any[]) urls.push({ url: `${base}/modules/${String(m.code).toLowerCase()}`, lastModified: new Date(m.updated), changeFrequency: "weekly", priority: 0.8 });
+    const papers = await db.execute(sql`SELECT id, updated_at FROM papers WHERE status = 'active' ORDER BY updated_at DESC LIMIT 20000`);
+    for (const p of papers.rows as any[]) urls.push({ url: `${base}/papers/${p.id}`, lastModified: new Date(p.updated_at), changeFrequency: "monthly", priority: 0.6 });
+    const faculties = await db.execute(sql`SELECT slug FROM faculties`);
+    for (const f of faculties.rows as any[]) urls.push({ url: `${base}/browse/${f.slug}`, changeFrequency: "weekly", priority: 0.7 });
   } catch {
-    // DB not available at build
+    // DB unavailable — static URLs only
   }
-
   return urls;
 }
