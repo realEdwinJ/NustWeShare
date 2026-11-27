@@ -39,6 +39,8 @@ Google search + clean academic archive + simple document viewer — not a univer
 
 ### Operations
 
+- **Hosting:** Cloudflare account `977c154319bfbdee6a3ecfd81b69d53d` (Worker `nustweshare`, R2 bucket `nustweshare-papers`, Hyperdrive → Neon). Deploy with `npm run deploy` (needs `CLOUDFLARE_API_TOKEN`). URL: https://nustweshare.longa-web.workers.dev
+
 - **After deploying this version run the migration once:** `DATABASE_URL=… npm run db:migrate` (adds profile/preferences columns, bookmarks and paper-request tables — additive only).
 - Make someone a moderator: `curl -X POST https://<host>/api/admin/bootstrap -H "x-admin-secret: $ADMIN_SECRET" -H "content-type: application/json" -d '{"username":"alice"}'`
 - `GET /api/diag` now requires the same `x-admin-secret` header.

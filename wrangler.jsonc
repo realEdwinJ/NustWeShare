@@ -1,6 +1,8 @@
 {
 	"$schema": "./node_modules/wrangler/config-schema.json",
 	"name": "nustweshare",
+	// Billed account (moved from the previous account)
+	"account_id": "977c154319bfbdee6a3ecfd81b69d53d",
 	"main": ".open-next/worker.js",
 	"compatibility_date": "2026-08-25",
 	"compatibility_flags": [
@@ -15,7 +17,7 @@
 		"enabled": true
 	},
 	"vars": {
-		"NEXT_PUBLIC_APP_URL": "https://nustweshare.workers.dev"
+		"NEXT_PUBLIC_APP_URL": "https://nustweshare.longa-web.workers.dev"
 	},
 	"r2_buckets": [
 		{
