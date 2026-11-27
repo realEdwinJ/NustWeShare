@@ -29,27 +29,7 @@
 	"hyperdrive": [
 		{
 			"binding": "HYPERDRIVE",
-			"id": "507d02782751464e9d9b46bcd732f2ea"
+			"id": "46fc43cba63945b981c8cd8b2d9a47bc"
 		}
-	],
-	"env": {
-		"preview": {
-			"vars": {
-				"NEXT_PUBLIC_APP_URL": "https://preview.nustweshare.workers.dev"
-			},
-			"hyperdrive": [
-				{
-					"binding": "HYPERDRIVE",
-					"id": "507d02782751464e9d9b46bcd732f2ea"
-				}
-			],
-			"r2_buckets": [
-				{
-					"binding": "PAPERS_BUCKET",
-					"bucket_name": "nustweshare-papers-preview",
-					"preview_bucket_name": "nustweshare-papers-preview"
-				}
-			]
-		}
-	}
+	]
 }

@@ -22,7 +22,8 @@
     "health": "curl -s http://localhost:3000/api/health | jq",
     "predev": "node scripts/copy-pdf-worker.mjs",
     "prebuild": "node scripts/copy-pdf-worker.mjs",
-    "postinstall": "node scripts/copy-pdf-worker.mjs"
+    "postinstall": "node scripts/copy-pdf-worker.mjs",
+    "db:migrate:http": "tsx src/db/migrate-http.ts"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",
@@ -40,6 +41,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@neondatabase/serverless": "^0.10.4",
     "@opennextjs/cloudflare": "^1.20.2",
     "@tailwindcss/postcss": "^4",
     "@types/bcryptjs": "^2.4.6",
